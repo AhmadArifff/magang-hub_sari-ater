@@ -1,0 +1,72 @@
+SELECT
+    *,
+    
+    -- STATUS KEHADIRAN
+    CASE
+        WHEN Actual_Masuk IS NULL AND Actual_Pulang IS NULL THEN 'Tidak Hadir'
+        WHEN Actual_Masuk IS NOT NULL AND Actual_Pulang IS NULL THEN 'Tidak scan pulang'
+        WHEN Actual_Masuk IS NULL AND Actual_Pulang IS NOT NULL THEN 'Tidak scan masuk'
+        ELSE 'Hadir'
+    END AS Status_Kehadiran,
+
+    -- STATUS MASUK
+    CASE
+        WHEN Actual_Masuk IS NULL THEN 'Tidak scan masuk'
+        WHEN Actual_Masuk <= Jadwal_Masuk THEN 'Masuk Tepat Waktu'
+        ELSE 'Masuk Telat'
+    END AS Status_Masuk,
+
+    -- STATUS PULANG
+    CASE
+        WHEN Actual_Pulang IS NULL THEN 'Tidak scan pulang'
+        WHEN Actual_Pulang >= Jadwal_Pulang THEN 'Pulang Tepat Waktu'
+        ELSE 'Pulang Terlalu Cepat'
+    END AS Status_Pulang
+
+FROM (
+    SELECT
+        jk.nama AS Nama,
+        jk.tanggal AS Tanggal,
+        jk.kode_shift AS Kode_Shift,
+        ij.jam_masuk AS Jadwal_Masuk,
+        ij.jam_pulang AS Jadwal_Pulang,
+
+        /* 
+           ACTUAL MASUK (scan valid)
+           Ambil scan paling awal SELAMA:
+           - terjadi sebelum 4 jam setelah jadwal masuk
+        */
+        MIN(
+            CASE 
+                WHEN kj.jam <= ADDTIME(ij.jam_masuk, '04:00:00')
+                THEN kj.jam
+            END
+        ) AS Actual_Masuk,
+
+        /*
+           ACTUAL PULANG (scan valid)
+           Ambil scan paling akhir SELAMA:
+           - terjadi setelah 6 jam sebelum jadwal pulang
+        */
+        MAX(
+            CASE 
+                WHEN kj.jam >= SUBTIME(ij.jam_pulang, '06:00:00')
+                THEN kj.jam
+            END
+        ) AS Actual_Pulang
+
+    FROM jadwal_karyawan jk
+    LEFT JOIN informasi_jadwal ij
+        ON jk.kode_shift = ij.kode
+    LEFT JOIN kehadiran_karyawan kj
+        ON jk.nama = kj.nama 
+        AND jk.tanggal = kj.tanggal
+
+    GROUP BY
+        jk.nama,
+        jk.tanggal,
+        jk.kode_shift,
+        ij.jam_masuk,
+        ij.jam_pulang
+) AS base
+ORDER BY Nama, Tanggal;

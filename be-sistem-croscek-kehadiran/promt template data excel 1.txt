@@ -1,0 +1,9 @@
+tolong buatkan tampilan contoh template export data excel untuk dimasukan ke dalam database sebagai data tabel database informasi jadwal! jadi tolong buatkan tombol button untuk export template! dan buatkan juga template excelnya sesuai ketentuan dibawah ini:
+1. untuk baris 1a dan 2a sampai 1j dan 2j merupakan kolom header.
+2. untuk kolom terdiri seperti dibawah:
+No.	Lokasi Kerja	Nama	Kode	Jam		Keterangan	Group	Status	Kontrol
+				Masuk	Pulang				
+3. untuk set kolom No, lokasi kerja, nama, kode, keterangan group, status, dan kontrol itu headernya merge antara baris 1 dan 2, contohnya seperti kolom no dia merge baris 1a dan 2a, juga lainnya sama!
+4. untuk kolom jam, masuk, dan pulang berbeda, untuk jam berada pada posisi 1e dan 1f yang di merge, dan untuk kolom masuk berada pada 2e dan pulang pada 2f!
+5. untuk baris 3a-3j ke bawah merupakan record!
+6. tolong tambahkan warna header template data excelnya itu abu, dengan text headernya putih, dan tampilan di setiap kolomnya center!

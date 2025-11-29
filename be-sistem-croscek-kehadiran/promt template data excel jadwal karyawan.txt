@@ -1,0 +1,7 @@
+tolong buatkan template export data excel seperti:
+1. kolom 1a-1ah merupakan text "SCHEDULE" dengan style merge 1a-1ah dan tampil center.
+2. kolom 2a-2ah merupakan text nama bulan dan tahun sekarang seperti "November 2025" dan itu diambil perhari bulan dan tahun sekarang.
+3. kolom 4a dan 5a sampai 4ah dan 5ah merupakan kolom header, dan untuk kolom 4a dan 5a adalah text "NO" yang merge, dan kolom 4b dan 5b adalah text "ID ABSEN"	yang merge, dan kolom 4c dan 5c adalah text "NAMA" yang di merge, dan untuk kolom 4a-4ah merupakan kolom hari yang di singkat seperti sabtu = SB, Minggu = MG, Senin= SN, Selasa= SL, rabu = RB, kamis = KM, jumat = JM yang sesuai calender, dan untuk kolom 5a-5ah merupakan tanggal perbulan dan tahun hari ini sesuai calender.
+4. untuk baris 6a-6ah merupakan isi data record
+
+untuk perbaikan code template data excel jadwal karyawan dibawah!																																 

@@ -1,0 +1,63 @@
+SELECT
+    jk.nama AS Nama,
+    jk.tanggal AS Tanggal,
+    jk.kode_shift AS Kode_Jadwal,
+    ij.jam_masuk AS Jadwal_Masuk,
+    ij.jam_pulang AS Jadwal_Pulang,
+    ij.keterangan AS Jadwal_Status,
+
+    -- HITUNG TOTAL SCAN
+    COUNT(kj.jam) AS Total_Scan,
+
+    -- Actual Masuk (ONLY if at least 1 scan)
+    CASE
+        WHEN COUNT(kj.jam) >= 1 THEN MIN(kj.jam)
+        ELSE NULL
+    END AS Actual_Masuk,
+
+    -- Actual Pulang (ONLY if at least 2 scan)
+    CASE
+        WHEN COUNT(kj.jam) >= 2 THEN MAX(kj.jam)
+        ELSE NULL
+    END AS Actual_Pulang,
+
+    -- STATUS KEHADIRAN
+    CASE
+        WHEN COUNT(kj.jam) = 0 THEN 'Tidak Hadir'
+        WHEN COUNT(kj.jam) = 1 THEN 'Tidak scan pulang'
+        ELSE 'Hadir'
+    END AS Status_Kehadiran,
+
+    -- STATUS MASUK
+    CASE
+        WHEN COUNT(kj.jam) = 0 THEN 'Tidak Hadir'
+        WHEN MIN(kj.jam) <= ij.jam_masuk THEN 'Masuk Tepat Waktu'
+        ELSE 'Masuk Telat'
+    END AS Status_Masuk,
+
+    -- STATUS PULANG
+    CASE
+        WHEN COUNT(kj.jam) = 0 THEN 'Tidak Hadir'
+        WHEN COUNT(kj.jam) = 1 THEN 'Pulang Terlalu Cepat' -- karena tidak scan pulang
+        WHEN MAX(kj.jam) >= ij.jam_pulang THEN 'Pulang Tepat Waktu'
+        ELSE 'Pulang Terlalu Cepat'
+    END AS Status_Pulang
+
+FROM
+    jadwal_karyawan jk
+LEFT JOIN
+    informasi_jadwal ij
+        ON jk.kode_shift = ij.kode
+LEFT JOIN
+    kehadiran_karyawan kj
+        ON jk.nama = kj.nama
+        AND jk.tanggal = kj.tanggal
+GROUP BY
+    jk.nama,
+    jk.tanggal,
+    jk.kode_shift,
+    ij.jam_masuk,
+    ij.jam_pulang,
+    ij.keterangan
+ORDER BY
+    jk.nama, jk.tanggal;

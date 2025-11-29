@@ -1,0 +1,61 @@
+SELECT
+    jk.nama AS Nama,
+    jk.tanggal AS Tanggal,
+    jk.kode_shift AS Kode_Jadwal,
+    ij.jam_masuk AS Jadwal_Masuk,
+    ij.jam_pulang AS Jadwal_Pulang,
+    ij.keterangan AS Jadwal_Status,
+
+    -- Ambil MIN dan MAX langsung
+    MIN(kj.jam) AS Raw_Masuk,
+    MAX(kj.jam) AS Raw_Pulang,
+
+    -- Actual Masuk
+    CASE
+        WHEN MIN(kj.jam) IS NULL THEN NULL
+        ELSE MIN(kj.jam)
+    END AS Actual_Masuk,
+
+    -- Actual Pulang (HANYA jika MIN != MAX)
+    CASE
+        WHEN MIN(kj.jam) = MAX(kj.jam) THEN NULL
+        ELSE MAX(kj.jam)
+    END AS Actual_Pulang,
+
+    -- STATUS KEHADIRAN
+    CASE
+        WHEN MIN(kj.jam) IS NULL AND MAX(kj.jam) IS NULL THEN 'Tidak Hadir'
+        WHEN MIN(kj.jam) IS NULL THEN 'Tidak scan masuk'
+        WHEN MIN(kj.jam) = MAX(kj.jam) THEN 'Tidak scan pulang'
+        ELSE 'Hadir'
+    END AS Status_Kehadiran,
+
+    -- STATUS MASUK (benar-benar berdasarkan Actual_Masuk)
+    CASE
+        WHEN MIN(kj.jam) IS NULL THEN 'Tidak scan masuk'
+        WHEN MIN(kj.jam) <= ij.jam_masuk THEN 'Masuk Tepat Waktu'
+        ELSE 'Masuk Telat'
+    END AS Status_Masuk,
+
+    -- STATUS PULANG (benar-benar berdasarkan Actual_Pulang)
+    CASE
+        WHEN MIN(kj.jam) IS NULL THEN 'Tidak scan pulang'      -- tidak masuk = otomatis tidak scan pulang
+        WHEN MIN(kj.jam) = MAX(kj.jam) THEN 'Tidak scan pulang' -- 1 scan saja
+        WHEN MAX(kj.jam) >= ij.jam_pulang THEN 'Pulang Tepat Waktu'
+        ELSE 'Pulang Terlalu Cepat'
+    END AS Status_Pulang
+
+FROM jadwal_karyawan jk
+LEFT JOIN informasi_jadwal ij
+    ON jk.kode_shift = ij.kode
+LEFT JOIN kehadiran_karyawan kj
+    ON jk.nama = kj.nama
+    AND jk.tanggal = kj.tanggal
+GROUP BY
+    jk.nama,
+    jk.tanggal,
+    jk.kode_shift,
+    ij.jam_masuk,
+    ij.jam_pulang,
+    ij.keterangan
+ORDER BY jk.nama, jk.tanggal;
