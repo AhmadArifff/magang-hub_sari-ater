@@ -1,0 +1,129 @@
+SELECT
+    base.Nama,
+    base.Tanggal,
+    base.Kode_Shift,
+    base.Jabatan,
+    base.Departemen,
+    base.Jadwal_Masuk,
+    base.Jadwal_Pulang,
+    base.Actual_Masuk,
+    base.Actual_Pulang,
+
+    CASE
+        WHEN base.Actual_Masuk IS NULL AND base.Actual_Pulang IS NULL THEN 'Tidak Hadir'
+        ELSE 'Hadir'
+    END AS Status_Kehadiran,
+
+    CASE
+        WHEN base.Actual_Masuk IS NULL THEN 'Tidak scan masuk'
+        WHEN base.Actual_Masuk <= base.Scheduled_Start THEN 'Masuk Tepat Waktu'
+        ELSE 'Masuk Telat'
+    END AS Status_Masuk,
+
+    CASE
+        WHEN base.Actual_Pulang IS NULL THEN 'Tidak scan pulang'
+        WHEN base.Actual_Pulang >= base.Scheduled_End THEN 'Pulang Tepat Waktu'
+        ELSE 'Pulang Terlalu Cepat'
+    END AS Status_Pulang
+
+FROM (
+
+    SELECT
+        jk.nama AS Nama,
+        jk.tanggal AS Tanggal,
+        jk.kode_shift AS Kode_Shift,
+
+        si.jam_masuk AS Jadwal_Masuk,
+        si.jam_pulang AS Jadwal_Pulang,
+        si.lintas_hari,
+
+        -- jabatan / departemen ambil paling relevan hari itu (opsional: ambil latest scan hari itu)
+        (
+            SELECT kh1.jabatan
+            FROM kehadiran_karyawan kh1
+            WHERE kh1.nama = jk.nama
+              AND kh1.tanggal = jk.tanggal
+            ORDER BY kh1.tanggal_scan DESC
+            LIMIT 1
+        ) AS Jabatan,
+
+        (
+            SELECT kh2.departemen
+            FROM kehadiran_karyawan kh2
+            WHERE kh2.nama = jk.nama
+              AND kh2.tanggal = jk.tanggal
+            ORDER BY kh2.tanggal_scan DESC
+            LIMIT 1
+        ) AS Departemen,
+
+        -- Scheduled Start (selalu pada jk.tanggal + jam_masuk)
+        CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) AS Scheduled_Start,
+
+        -- Scheduled End (jika lintas hari -> tanggal +1, kalau tidak -> same date)
+        CASE
+            WHEN si.lintas_hari = 1
+                THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+            ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+        END AS Scheduled_End,
+
+        -- Masuk window: Scheduled_Start -4h .. Scheduled_Start +4h
+        (CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 4 HOUR) AS Range_Masuk_Start,
+        (CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR) AS Range_Masuk_End,
+
+        -- Pulang window: Scheduled_End -6h .. Scheduled_End +6h
+        (CASE WHEN si.lintas_hari = 1
+              THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+              ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+         END - INTERVAL 6 HOUR) AS Range_Pulang_Start,
+
+        (CASE WHEN si.lintas_hari = 1
+              THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+              ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+         END + INTERVAL 6 HOUR) AS Range_Pulang_End,
+
+        -- Actual Masuk: earliest scan within masuk window
+        (
+            SELECT MIN(k2.tanggal_scan)
+            FROM kehadiran_karyawan k2
+            WHERE k2.nama = jk.nama
+              AND k2.tanggal_scan BETWEEN
+                  (CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 4 HOUR)
+              AND
+                  (CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR)
+        ) AS Actual_Masuk,
+
+        -- Actual Pulang: latest scan within pulang window
+        (
+            SELECT MAX(k3.tanggal_scan)
+            FROM kehadiran_karyawan k3
+            WHERE k3.nama = jk.nama
+              AND k3.tanggal_scan BETWEEN
+                  (CASE
+                      WHEN si.lintas_hari = 1
+                        THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) - INTERVAL 6 HOUR
+                      ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) - INTERVAL 6 HOUR
+                   END)
+              AND
+                  (CASE
+                      WHEN si.lintas_hari = 1
+                        THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) + INTERVAL 6 HOUR
+                      ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) + INTERVAL 6 HOUR
+                   END)
+        ) AS Actual_Pulang
+
+    FROM jadwal_karyawan jk
+    LEFT JOIN shift_info si
+        ON jk.kode_shift = si.kode
+
+    -- jangan join langsung ke kehadiran_karyawan (menggandakan baris)
+    GROUP BY
+        jk.nama,
+        jk.tanggal,
+        jk.kode_shift,
+        si.jam_masuk,
+        si.jam_pulang,
+        si.lintas_hari
+
+) AS base
+
+ORDER BY base.Nama, base.Tanggal;

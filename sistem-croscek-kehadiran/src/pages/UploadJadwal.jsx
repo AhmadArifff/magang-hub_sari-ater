@@ -239,7 +239,7 @@ export default function UploadJadwal() {
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, "Template Jadwal");
-    XLSX.writeFile(wb, "template_jadwal.xlsx");
+    XLSX.writeFile(wb, "template_informasi_jadwal.xlsx");
   };
 
   return (

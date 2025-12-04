@@ -1,0 +1,2 @@
+1. Error bug hasil croscek dari sesuai kode jadwal masuk dan pulang, yang memengaruhi cekin dan cekout yang masuk datanya ke hari sebelum dan sesudahnya dan ada juga data yang dupliacte
+2. Menambahkan Hasil Croscek kolom role jabatan dan departemen

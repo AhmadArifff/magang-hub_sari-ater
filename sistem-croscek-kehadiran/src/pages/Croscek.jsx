@@ -187,14 +187,21 @@ export default function Croscek() {
     setLoadingJadwal(false);
   }
 
+  // Tambahkan state untuk bulan yang dipilih (0-11, default bulan sekarang)
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+
+  // Fungsi untuk handle perubahan bulan
+  const handleMonthChange = (e) => {
+    setSelectedMonth(parseInt(e.target.value));
+  };
+
   // EXPORT TEMPLATE EXCEL UNTUK JADWAL (diperbaiki dengan aoa_to_sheet untuk memastikan data muncul)
   const exportTemplateJadwal = () => {
     const wb = XLSX.utils.book_new();
 
-    // Ambil tanggal sekarang
-    const today = new Date();
-    const month = today.getMonth(); // 0-11
-    const year = today.getFullYear();
+    // Gunakan bulan yang dipilih, tahun sekarang
+    const month = selectedMonth; // 0-11
+    const year = new Date().getFullYear();
 
     // Nama bulan (dalam bahasa Indonesia)
     const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
@@ -260,7 +267,7 @@ export default function Croscek() {
     ws['!cols'] = Array(34).fill({ wch: 5 });
 
     XLSX.utils.book_append_sheet(wb, ws, "Template Jadwal");
-    XLSX.writeFile(wb, `template_jadwal_${month + 1}-${year}.xlsx`);
+    XLSX.writeFile(wb, `template_jadwal_karyawan_Bulan_ke-${month + 1}-${year}.xlsx`);
   };
 
   async function saveJadwal() {
@@ -277,13 +284,18 @@ export default function Croscek() {
       });
 
       const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Gagal menyimpan jadwal");
+        return;
+      }
       alert(data.message || "Berhasil menyimpan jadwal");
       loadJadwalKaryawan(); // Reload data setelah save
-    } catch {
-      alert("Error saat menyimpan jadwal");
+    } catch (err) {
+      alert("Error saat menyimpan jadwal: " + err.message);
     }
     setSavingJadwal(false);
   }
+
 
   // -----------------------------------------
   // UPLOAD + PREVIEW KEHADIRAN
@@ -319,25 +331,37 @@ export default function Croscek() {
   }
 
   async function saveKehadiran() {
-    if (!kehadiranFile) return alert("Upload file dulu");
+      if (!kehadiranFile) return alert("Upload file dulu!");
 
-    setSavingKehadiran(true);
-    try {
-      const form = new FormData();
-      form.append("file", kehadiranFile);
+      setSavingKehadiran(true);
 
-      const res = await fetch(`${API}/import-kehadiran`, {
-        method: "POST",
-        body: form,
-      });
+      try {
+          const form = new FormData();
+          form.append("file", kehadiranFile);
 
-      const data = await res.json();
-      alert(data.message || "Kehadiran berhasil disimpan");
-    } catch {
-      alert("Error saat menyimpan kehadiran");
-    }
-    setSavingKehadiran(false);
+          const res = await fetch(`${API}/import-kehadiran`, {
+              method: "POST",
+              body: form,
+          });
+
+          const data = await res.json();
+
+          // CEK STATUS RESPONSE
+          if (!res.ok) {
+              alert(data.error || "Gagal menyimpan kehadiran!");
+              setSavingKehadiran(false);
+              return;
+          }
+
+          // Status OK → tampilkan pesan sukses
+          alert(data.message || "Kehadiran berhasil disimpan");
+      } catch (e) {
+          alert("Error saat menyimpan kehadiran: " + e.message);
+      }
+
+      setSavingKehadiran(false);
   }
+
 
   // EXPORT TEMPLATE EXCEL UNTUK KEHADIRAN (diperbaiki sesuai spesifikasi)
   const exportTemplateKehadiran = () => {
@@ -385,24 +409,178 @@ export default function Croscek() {
     XLSX.utils.book_append_sheet(wb, ws, "Template Kehadiran");
     XLSX.writeFile(wb, "template_kehadiran.xlsx");
   };
+  
 
-    // -----------------------------------------
+  // // TAMBAHAN: STATE UNTUK KEHADIRAN (DINAMIS DARI DATA)
+  // const [selectedMonthKehadiran, setSelectedMonthKehadiran] = useState(new Date().getMonth());
+  // const [selectedYearKehadiran, setSelectedYearKehadiran] = useState(new Date().getFullYear());
+  // const [availablePeriods, setAvailablePeriods] = useState([]); // List {bulan, tahun} dari API
+  // const [loadingPeriods, setLoadingPeriods] = useState(false);
+
+  // // TAMBAHAN: LOAD PERIODE BULAN-TAHUN DARI KEHADIRAN
+  // const loadAvailablePeriods = async () => {
+  //   setLoadingPeriods(true);
+  //   try {
+  //     const res = await fetch(`${API}/kehadiran/available-periods`);
+  //     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  //     const data = await res.json();
+  //     setAvailablePeriods(data.periods || []);
+  //   } catch (e) {
+  //     alert("Gagal load periode kehadiran: " + e.message);
+  //   }
+  //   setLoadingPeriods(false);
+  // };
+
+  // // TAMBAHAN: USE EFFECT UNTUK LOAD PERIODE SAAT MOUNT
+  // useEffect(() => {
+  //   loadAvailablePeriods();
+  // }, []);
+
+  // // TAMBAHAN: HANDLER UNTUK HAPUS PERIODE KEHADIRAN
+  // const handleDeleteKehadiranPeriod = async () => {
+  //   if (!window.confirm(`Yakin ingin menghapus semua data kehadiran untuk ${selectedMonthKehadiran + 1}/${selectedYearKehadiran}?`)) return;
+
+  //   try {
+  //     const res = await fetch(`${API}/kehadiran/delete-period`, {
+  //       method: "DELETE",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify({ bulan: selectedMonthKehadiran + 1, tahun: selectedYearKehadiran }),
+  //     });
+  //     const data = await res.json();
+  //     if (!res.ok) {
+  //       alert(data.error || "Gagal hapus periode");
+  //       return;
+  //     }
+  //     alert(data.message);
+  //     loadAvailablePeriods(); // Reload periode setelah hapus
+  //   } catch (e) {
+  //     alert("Error saat hapus periode: " + e.message);
+  //   }
+  // };
+
+
+  // TAMBAHAN: STATE UNTUK KEHADIRAN (DINAMIS DARI DATA)
+  const [selectedMonthKehadiran, setSelectedMonthKehadiran] = useState(null);
+  const [selectedYearKehadiran, setSelectedYearKehadiran] = useState(null);
+  const [availablePeriods, setAvailablePeriods] = useState([]);
+  const [loadingPeriods, setLoadingPeriods] = useState(false);
+
+  // LOAD PERIODE
+  const loadAvailablePeriods = async () => {
+    setLoadingPeriods(true);
+    try {
+      const res = await fetch(`${API}/kehadiran/available-periods`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setAvailablePeriods(data.periods || []);
+
+      // Auto-select periode terbaru
+      if (data.periods?.length > 0) {
+        setSelectedMonthKehadiran(data.periods[0].bulan);
+        setSelectedYearKehadiran(data.periods[0].tahun);
+      }
+    } catch (e) {
+      alert("Gagal load periode kehadiran: " + e.message);
+    }
+    setLoadingPeriods(false);
+  };
+
+  useEffect(() => {
+    loadAvailablePeriods();
+  }, []);
+
+  // HAPUS PERIODE
+  const handleDeleteKehadiranPeriod = async () => {
+    if (!selectedMonthKehadiran || !selectedYearKehadiran) {
+      alert("Silakan pilih periode terlebih dahulu.");
+      return;
+    }
+
+    if (!window.confirm(
+        `Yakin ingin menghapus semua data kehadiran untuk ${selectedMonthKehadiran}/${selectedYearKehadiran}?`
+    )) return;
+
+    try {
+      const res = await fetch(`${API}/kehadiran/delete-period`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bulan: selectedMonthKehadiran,
+          tahun: selectedYearKehadiran,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Gagal hapus periode");
+        return;
+      }
+
+      alert(data.message);
+      loadAvailablePeriods();
+    } catch (e) {
+      alert("Error saat hapus periode: " + e.message);
+    }
+  };
+
+
+
+  // -----------------------------------------
   // PROSES CROSCEK (SHOW MODAL)
   // -----------------------------------------
+  // async function prosesCroscek() {
+  //   setProcessing(true);
+
+  //   try {
+  //     const res = await fetch(`${API}/croscek`);
+  //     const data = await res.json();
+  //     setCroscekData(data.data || []);
+  //     setShowModal(true);
+  //   } catch (err) {
+  //     alert("Gagal memproses croscek");
+  //   }
+
+  //   setProcessing(false);
+  // }
+
+  // TAMBAHAN: STATE UNTUK PROGRESS BAR POP-UP
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [progressInterval, setProgressInterval] = useState(null); // Untuk menyimpan ID interval
+
   async function prosesCroscek() {
     setProcessing(true);
+    setShowProgressModal(true); // Tampilkan modal progress
+    setProgress(0); // Reset progress
+
+    // Simulasi progress: Naik 10% setiap 500ms (total ~5 detik untuk mencapai 100%)
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 90) return prev; // Jangan lewati 90% sampai data selesai
+        return prev + 10;
+      });
+    }, 500);
+    setProgressInterval(interval);
 
     try {
       const res = await fetch(`${API}/croscek`);
       const data = await res.json();
       setCroscekData(data.data || []);
-      setShowModal(true);
+      setShowModal(true); // Tampilkan modal preview setelah selesai
     } catch (err) {
       alert("Gagal memproses croscek");
     }
 
-    setProcessing(false);
+    // Set progress ke 100% dan tutup modal setelah delay
+    setProgress(100);
+    clearInterval(interval); // Hentikan interval
+    setTimeout(() => {
+      setShowProgressModal(false);
+      setProcessing(false);
+    }, 1000); // Delay 1 detik untuk menampilkan 100%
   }
+
 
   // -----------------------------------------
   // PAGINATION + SEARCH + FILTER TANGGAL
@@ -441,11 +619,11 @@ export default function Croscek() {
   };
 
   const handleEditChange = (id_absen, field, value) => {
-    setJadwalKaryawanList(prev => prev.map(item => (item.id_absen === id_absen ? { ...item, [field]: value } : item)));
+    setJadwalKaryawanList(prev => prev.map(item => (item.no === id_absen ? { ...item, [field]: value } : item)));
   };
 
   const handleUpdate = async (id_absen) => {
-    const data = jadwalKaryawanList.find(item => item.id_absen === id_absen);
+    const data = jadwalKaryawanList.find(item => item.no === id_absen);
     if (!data) {
       alert("Data tidak ditemukan");
       return;
@@ -501,18 +679,70 @@ export default function Croscek() {
 
   const colsJadwal = ["id_absen", "nama", "tanggal", "kode_shift"];
 
+  // format jam ke HH:MM:SS untuk actual masuk/pulang
+  const formatJam = (val) => {
+    if (!val) return "";
+    const d = new Date(val);
+    if (isNaN(d)) return val; 
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    const ss = String(d.getSeconds()).padStart(2, "0");
+    return `${hh}:${mm}:${ss}`;
+  };
+
   // Export Crocek Absem (filtered data)
   const exportFilteredData = () => {
     const wb = XLSX.utils.book_new();
-    const headers = ["Nama", "Tanggal", "Kode Shift", "Jadwal Masuk", "Jadwal Pulang", "Aktual Masuk", "Aktual Pulang", "Status Kehadiran", "Status Masuk", "Status Pulang"];
+    const headers = ["Nama", "Tanggal", "Kode Shift", "Jabatan", "Departemen","Jadwal Masuk", "Jadwal Pulang", "Aktual Masuk", "Aktual Pulang", "Keterangan Jadwal","Status Kehadiran", "Status Masuk", "Status Pulang"];
+    
+    // Format tanggal ke DD-MM-YYYY
+    const formatTanggal = (tgl) => {
+      if (!tgl) return "";
+      const d = new Date(tgl);
+      if (isNaN(d)) return tgl;
+      const day = String(d.getDate()).padStart(2, "0");
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const year = d.getFullYear();
+      return `${day}-${month}-${year}`;
+    };
     const data = [headers, ...filteredData.map(row => [
-      row.Nama, row.Tanggal, row.Kode_Shift, row.Jadwal_Masuk, row.Jadwal_Pulang, row.Actual_Masuk, row.Actual_Pulang, row.Status_Kehadiran, row.Status_Masuk, row.Status_Pulang
+      row.Nama, formatTanggal(row.Tanggal), row.Kode_Shift, row.Jabatan, row.Departemen, row.Jadwal_Masuk, row.Jadwal_Pulang, formatJam(row.Actual_Masuk), formatJam(row.Actual_Pulang), row.Keterangan, row.Status_Kehadiran, row.Status_Masuk, row.Status_Pulang
     ])];
     const ws = XLSX.utils.aoa_to_sheet(data);
     ws['!cols'] = headers.map(() => ({ wch: 15 }));
     XLSX.utils.book_append_sheet(wb, ws, "Hasil Croscek");
-    XLSX.writeFile(wb, `hasil_croscek_${startDate || 'all'}_${endDate || 'all'}.xlsx`);
+    XLSX.writeFile(wb, `hasil_croscek_${startDate || 'all'} sampai ${endDate || 'all'}.xlsx`);
   };
+
+
+  // 🔥 HANDLER UNTUK KOSONGKAN SEMUA DATA JADWAL KARYAWAN
+  const handleKosongkanJadwal = async () => {
+    if (!window.confirm("Yakin ingin menghapus SEMUA data jadwal karyawan?")) return;
+
+    try {
+      const res = await fetch(`${API}/jadwal-karyawan/clear`, {
+        method: "POST",
+      });
+
+      let result = {};
+      try {
+        result = await res.json();
+      } catch (e) {
+        console.warn("Response bukan JSON:", e);
+      }
+
+      if (res.ok) {
+        alert(result.message || "Semua jadwal berhasil dikosongkan!");
+        loadJadwalKaryawan();
+      } else {
+        alert("Gagal mengosongkan: " + (result.error || "Unknown error"));
+      }
+    } catch (err) {
+      alert("Terjadi kesalahan: " + err.message);
+    }
+  };
+
+
 
   // -----------------------------------------
   // RENDER
@@ -537,14 +767,35 @@ export default function Croscek() {
           <p className="text-gray-700 font-medium mt-3">Upload File Jadwal</p>
           <input type="file" onChange={handleUploadJadwal} className="hidden" />
         </label>
-        <button
-          onClick={exportTemplateJadwal}
-          className="flex items-center justify-center gap-2 bg-[#1BA39C] hover:bg-[#158f89] text-white px-6 py-4 rounded-xl shadow-md text-sm md:text-base"
-        >
-          <Download size={20} />
-          Download Template Excel
-        </button>
+        <div className="flex flex-col gap-2">
+          <select
+            value={selectedMonth}
+            onChange={handleMonthChange}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value={0}>Januari</option>
+            <option value={1}>Februari</option>
+            <option value={2}>Maret</option>
+            <option value={3}>April</option>
+            <option value={4}>Mei</option>
+            <option value={5}>Juni</option>
+            <option value={6}>Juli</option>
+            <option value={7}>Agustus</option>
+            <option value={8}>September</option>
+            <option value={9}>Oktober</option>
+            <option value={10}>November</option>
+            <option value={11}>Desember</option>
+          </select>
+          <button
+            onClick={exportTemplateJadwal}
+            className="flex items-center justify-center gap-2 bg-[#1BA39C] hover:bg-[#158f89] text-white px-6 py-4 rounded-xl shadow-md text-sm md:text-base"
+          >
+            <Download size={20} />
+            Download Template Excel
+          </button>
+        </div>
       </div>
+
 
       {loadingJadwal && (
         <p className="mt-3 text-center text-gray-600">Memproses file jadwal...</p>
@@ -592,6 +843,13 @@ export default function Croscek() {
             >
               <Plus size={16} /> Tambah
             </button>
+            {/* 🔥 Tombol Kosongkan Jadwal */}
+            <button
+              className="flex items-center gap-1 bg-red-600 text-white px-3 py-1 rounded-lg"
+              onClick={handleKosongkanJadwal}
+            >
+              🗑 Kosongkan
+            </button>
           </div>
         </div>
 
@@ -608,11 +866,11 @@ export default function Croscek() {
             </thead>
             <tbody>
               {paginatedJadwal.map((item, index) => (
-                <tr key={item.id_absen}>
+                <tr key={item.no}>
                   <td className="border p-2 text-center">{(pageJadwal - 1) * rowsPerPageJadwal + index + 1}</td>
                   {colsJadwal.map(col => (
                     <td className="border p-2" key={col}>
-                      {editingId === item.id_absen ? (
+                      {editingId === item.no ? (
                         <input
                           type={
                             col === "tanggal" ? "date" :
@@ -620,16 +878,16 @@ export default function Croscek() {
                           }
                           className="border px-2 py-1 w-full"
                           value={item[col] || ""}
-                          onChange={e => handleEditChange(item.id_absen, col, e.target.value)}
+                          onChange={e => handleEditChange(item.no, col, e.target.value)}
                           disabled={col === "id_absen"} // ❌ id_absen tidak bisa diedit
                         />
                       ) : item[col]}
                     </td>
                   ))}
                   <td className="border p-2 flex gap-2">
-                    {editingId === item.id_absen ? (
+                    {editingId === item.no ? (
                       <button
-                        onClick={() => handleUpdate(item.id_absen)}
+                        onClick={() => handleUpdate(item.no)}
                         disabled={loadingCRUD}
                         className="bg-blue-600 text-white px-2 py-1 rounded"
                       >
@@ -637,7 +895,7 @@ export default function Croscek() {
                       </button>
                     ) : (
                       <button
-                        onClick={() => setEditingId(item.id_absen)}
+                        onClick={() => setEditingId(item.no)}
                         className="bg-yellow-500 text-white px-2 py-1 rounded"
                       >
                         Edit
@@ -645,7 +903,7 @@ export default function Croscek() {
                     )}
 
                     <button
-                      onClick={() => handleDelete(item.id_absen)}
+                      onClick={() => handleDelete(item.no)}
                       className="bg-red-600 text-white px-2 py-1 rounded flex items-center gap-1"
                     >
                       <Trash2 size={14} /> Hapus
@@ -765,6 +1023,39 @@ export default function Croscek() {
           <p className="text-gray-700 font-medium mt-3">Upload File Kehadiran</p>
           <input type="file" onChange={handleUploadKehadiran} className="hidden" />
         </label>
+        <div className="flex flex-col gap-2">
+        {/* TAMBAHAN: SELECT BULAN (DINAMIS DARI DATA) */}
+        <select
+          value={`${selectedMonthKehadiran}-${selectedYearKehadiran}`}
+          onChange={(e) => {
+            const [bulan, tahun] = e.target.value.split("-").map(Number);
+            setSelectedMonthKehadiran(bulan);
+            setSelectedYearKehadiran(tahun);
+          }}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          disabled={loadingPeriods}
+        >
+          {availablePeriods.length > 0 ? (
+            availablePeriods.map((period, index) => (
+              <option
+                key={index}
+                value={`${period.bulan}-${period.tahun}`}
+              >
+                {new Date(0, period.bulan - 1).toLocaleString("id-ID", {
+                  month: "long",
+                })}{" "}
+                {period.tahun}
+              </option>
+            ))
+          ) : (
+            <option disabled>Tidak ada data periode</option>
+          )}
+        </select>
+
+        {/* TAMBAHAN: SELECT TAHUN (DINAMIS DARI DATA) - Opsional, jika bulan sudah mencakup tahun */}
+        {/* Jika perlu select tahun terpisah, tambahkan di sini, tapi untuk sekarang cukup bulan yang mencakup tahun */}
+        
+        {/* TAMBAHAN: BUTTON DOWNLOAD TEMPLATE */}
         <button
           onClick={exportTemplateKehadiran}
           className="flex items-center justify-center gap-2 bg-[#1BA39C] hover:bg-[#158f89] text-white px-6 py-4 rounded-xl shadow-md text-sm md:text-base"
@@ -772,6 +1063,23 @@ export default function Croscek() {
           <Download size={20} />
           Download Template Excel
         </button>
+        
+        {/* TAMBAHAN: BUTTON HAPUS PERIODE */}
+        <button
+          onClick={handleDeleteKehadiranPeriod}
+          disabled={availablePeriods.length === 0}
+          className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-6 py-4 rounded-xl shadow-md text-sm md:text-base disabled:opacity-50"
+        >
+          🗑 Hapus Data Periode
+        </button>
+      </div>
+        {/* <button
+          onClick={exportTemplateKehadiran}
+          className="flex items-center justify-center gap-2 bg-[#1BA39C] hover:bg-[#158f89] text-white px-6 py-4 rounded-xl shadow-md text-sm md:text-base"
+        >
+          <Download size={20} />
+          Download Template Excel
+        </button> */}
       </div>
 
       {loadingKehadiran && (
@@ -809,6 +1117,25 @@ export default function Croscek() {
           Proses Croscek <ArrowRight size={20} />
         </button>
       </div>
+
+
+      {/* MODAL PROGRESS BAR */}
+      {showProgressModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+          <div className="bg-white p-6 rounded-xl w-96 text-center">
+            <h3 className="text-lg font-bold mb-4">Memproses Croscek...</h3>
+            <p className="text-gray-600 mb-4">Mengambil data dari database, mohon tunggu.</p>
+            <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
+              <div
+                className="bg-blue-600 h-4 rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              ></div>
+            </div>
+            <p className="text-sm text-gray-500">{progress}% selesai</p>
+          </div>
+        </div>
+      )}
+
 
       {/* ======================================================= */}
       {/* 📌 MODAL PREVIEW CROSCEK (dengan tambahan filter tanggal dan export) */}
@@ -872,10 +1199,13 @@ export default function Croscek() {
                     <th className="border p-2">Nama</th>
                     <th className="border p-2">Tanggal</th>
                     <th className="border p-2">Kode Shift</th>
+                    <th className="border p-2">Jabatan</th>
+                    <th className="border p-2">Departemen</th>
                     <th className="border p-2">Jadwal Masuk</th>
                     <th className="border p-2">Jadwal Pulang</th>
                     <th className="border p-2">Aktual Masuk</th>
                     <th className="border p-2">Aktual Pulang</th>
+                    <th className="border p-2">Keterangan Jadwal</th>
                     <th className="border p-2">Status Kehadiran</th>
                     <th className="border p-2">Status Masuk</th>
                     <th className="border p-2">Status Pulang</th>
@@ -887,10 +1217,13 @@ export default function Croscek() {
                       <td className="border p-2">{row.Nama}</td>
                       <td className="border p-2">{row.Tanggal}</td>
                       <td className="border p-2">{row.Kode_Shift}</td>
+                      <td className="border p-2">{row.Jabatan}</td>
+                      <td className="border p-2">{row.Departemen}</td>
                       <td className="border p-2">{row.Jadwal_Masuk}</td>
                       <td className="border p-2">{row.Jadwal_Pulang}</td>
-                      <td className="border p-2">{row.Actual_Masuk}</td>
-                      <td className="border p-2">{row.Actual_Pulang}</td>
+                      <td className="border p-2">{formatJam(row.Actual_Masuk)}</td>
+                      <td className="border p-2">{formatJam(row.Actual_Pulang)}</td>
+                      <td className="border p-2">{row.Keterangan}</td>
                       <td className="border p-2">{row.Status_Kehadiran}</td>
                       <td className="border p-2">{row.Status_Masuk}</td>
                       <td className="border p-2">{row.Status_Pulang}</td>

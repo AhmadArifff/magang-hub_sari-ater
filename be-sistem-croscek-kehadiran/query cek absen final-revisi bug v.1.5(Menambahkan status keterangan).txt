@@ -1,0 +1,64 @@
+SELECT
+    *,
+    
+    -- STATUS KEHADIRAN (PERBAIKAN)
+    CASE
+        WHEN Actual_Masuk IS NULL AND Actual_Pulang IS NULL THEN 'Tidak Hadir'
+        WHEN Actual_Masuk IS NOT NULL OR Actual_Pulang IS NOT NULL THEN 'Hadir'
+    END AS Status_Kehadiran,
+
+    -- STATUS MASUK
+    CASE
+        WHEN Actual_Masuk IS NULL THEN 'Tidak scan masuk'
+        WHEN Actual_Masuk <= Jadwal_Masuk THEN 'Masuk Tepat Waktu'
+        ELSE 'Masuk Telat'
+    END AS Status_Masuk,
+
+    -- STATUS PULANG
+    CASE
+        WHEN Actual_Pulang IS NULL THEN 'Tidak scan pulang'
+        WHEN Actual_Pulang >= Jadwal_Pulang THEN 'Pulang Tepat Waktu'
+        ELSE 'Pulang Terlalu Cepat'
+    END AS Status_Pulang
+
+FROM (
+    SELECT
+        jk.nama AS Nama,
+        jk.tanggal AS Tanggal,
+        jk.kode_shift AS Kode_Shift,
+        ij.jam_masuk AS Jadwal_Masuk,
+        ij.jam_pulang AS Jadwal_Pulang,
+        ij.keterangan AS Keterangan,  -- Tambahan kolom keterangan dari tabel informasi_jadwal
+
+        -- Actual Masuk valid
+        MIN(
+            CASE 
+                WHEN kj.jam <= ADDTIME(ij.jam_masuk, '04:00:00')
+                THEN kj.jam
+            END
+        ) AS Actual_Masuk,
+
+        -- Actual Pulang valid
+        MAX(
+            CASE 
+                WHEN kj.jam >= SUBTIME(ij.jam_pulang, '06:00:00')
+                THEN kj.jam
+            END
+        ) AS Actual_Pulang
+
+    FROM jadwal_karyawan jk
+    LEFT JOIN informasi_jadwal ij
+        ON jk.kode_shift = ij.kode
+    LEFT JOIN kehadiran_karyawan kj
+        ON jk.nama = kj.nama 
+        AND jk.tanggal = kj.tanggal
+
+    GROUP BY
+        jk.nama,
+        jk.tanggal,
+        jk.kode_shift,
+        ij.jam_masuk,
+        ij.jam_pulang,
+        ij.keterangan  -- Tambahkan ke GROUP BY untuk konsistensi
+) AS base
+ORDER BY Nama, Tanggal;
