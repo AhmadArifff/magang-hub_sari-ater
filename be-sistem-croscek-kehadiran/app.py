@@ -276,6 +276,7 @@ def update_jadwal(kode):
             kode
         ))
         sync_single_shift(kode)
+        get_jadwal()
         conn.commit()
         cursor.close()
         conn.close()
@@ -294,6 +295,7 @@ def delete_jadwal(kode):
         cursor = conn.cursor()
         cursor.execute("DELETE FROM informasi_jadwal WHERE kode=%s", (kode,))
         delete_single_shift(kode)
+        get_jadwal()
         conn.commit()
         cursor.close()
         conn.close()
@@ -412,6 +414,218 @@ def upload_excel():
         return jsonify({"error": str(e)}), 500
 
 
+# =========================
+# Data KARYAWAN
+# =========================
+
+
+@app.route("/api/karyawan/list/nama", methods=["GET"])
+def get_karyawan_list():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT id_karyawan, nik, nama 
+            FROM karyawan
+            ORDER BY nama ASC
+        """)
+        rows = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+        # Debug: print jumlah data
+        print(f"Total karyawan yang diambil: {len(rows)}")
+        return jsonify(rows)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+    
+# =================== LIST Karyawan ===================
+@app.route("/api/karyawan/list", methods=["GET"])
+def get_karyawan():
+    try:
+        search = request.args.get("search", "")
+        page = int(request.args.get("page", 1))
+        limit = 10
+        offset = (page - 1) * limit
+
+        conn = get_db_connection()
+        cur = conn.cursor(dictionary=True)
+
+        cur.execute("""
+            SELECT COUNT(*) as total FROM karyawan
+            WHERE nama LIKE %s OR nik LIKE %s
+        """, (f"%{search}%", f"%{search}%"))
+        total = cur.fetchone()["total"]
+
+        cur.execute("""
+            SELECT nik, nama, jabatan, dept FROM karyawan
+            WHERE nama LIKE %s OR nik LIKE %s
+            ORDER BY nama ASC
+            LIMIT %s OFFSET %s
+        """, (f"%{search}%", f"%{search}%", limit, offset))
+
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        return jsonify({"data": rows, "total": total}), 200
+    except Exception as e:
+        print("ERROR GET KARYAWAN:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# =================== UPLOAD EXCEL ===================
+@app.route("/api/karyawan/upload", methods=["POST"])
+def upload_karyawan():
+    try:
+        file = request.files.get("file")
+        if not file:
+            return jsonify({"error": "File tidak ditemukan"}), 400
+
+        raw = file.read()
+        if len(raw) == 0:
+            return jsonify({"error": "File excel kosong"}), 400
+
+        df = pd.read_excel(BytesIO(raw))
+        df.columns = [c.strip().upper() for c in df.columns]
+        required = {"NAMA", "NIK", "JABATAN", "DEPT"}
+        if not required.issubset(set(df.columns)):
+            return jsonify({"error": f"Format kolom tidak sesuai template. Harus ada: {required}"}), 400
+
+        df = df.dropna(subset=["NIK"])
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        insert_count = 0
+        update_count = 0
+        duplicate_list = []   # daftar update detail
+
+        for _, row in df.iterrows():
+            nik = str(row["NIK"])
+            nama = row["NAMA"]
+            jabatan = row["JABATAN"]
+            dept = row["DEPT"]
+
+            # 🔍 cek duplicate by pair nik + nama
+            cur.execute("""
+                SELECT id_karyawan FROM karyawan 
+                WHERE nik=%s AND nama=%s
+            """, (nik, nama))
+            existing = cur.fetchone()
+
+            if existing:
+                cur.execute("""
+                    UPDATE karyawan SET jabatan=%s, dept=%s
+                    WHERE id_karyawan=%s
+                """, (jabatan, dept, existing[0]))
+                update_count += 1
+                duplicate_list.append({
+                    "nik": nik,
+                    "nama": nama,
+                    "jabatan": jabatan,
+                    "dept": dept
+                })
+            else:
+                cur.execute("""
+                    INSERT INTO karyawan (nik, nama, jabatan, dept)
+                    VALUES (%s, %s, %s, %s)
+                """, (nik, nama, jabatan, dept))
+                insert_count += 1
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "message": f"Upload sukses! Insert: {insert_count}, Update: {update_count}",
+            "updated_data": duplicate_list[:10],  
+            "updated_total": update_count
+        }), 200
+
+    except Exception as e:
+        print("ERROR UPLOAD KARYAWAN:", e)
+        return jsonify({"error": "Kesalahan Server, cek log"}), 500
+
+
+
+
+# =================== CREATE ===================
+@app.route("/api/karyawan/create", methods=["POST"])
+def create_karyawan():
+    try:
+        data = request.json
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO karyawan (nik, nama, jabatan, dept)
+            VALUES (%s, %s, %s, %s)
+        """, (
+            data.get("nik"),
+            data.get("nama"),
+            data.get("jabatan"),
+            data.get("dept")
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"message": "Karyawan berhasil ditambahkan"}), 201
+    except Exception as e:
+        print("ERROR CREATE KARYAWAN:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# =================== UPDATE ===================
+@app.route("/api/karyawan/update/<nik>", methods=["PUT"])
+def update_karyawan(nik):
+    try:
+        data = request.get_json(force=True)
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            UPDATE karyawan
+            SET nama=%s, jabatan=%s, dept=%s
+            WHERE nik=%s
+        """, (
+            data.get("nama"),
+            data.get("jabatan"),
+            data.get("dept"),
+            nik
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"message": "Data karyawan diperbarui"})
+    except Exception as e:
+        print("ERROR UPDATE KARYAWAN:", e)
+        return jsonify({"error": str(e)}), 500
+
+# =================== DELETE ===================
+@app.route("/api/karyawan/delete/<nik>", methods=["DELETE"])
+def delete_karyawan(nik):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM karyawan WHERE nik=%s", (nik,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"message": "Data karyawan dihapus"})
+    except Exception as e:
+        print("ERROR DELETE KARYAWAN:", e)
+        return jsonify({"error": str(e)}), 500
+    
+
+@app.errorhandler(500)
+def handle_500(e):
+    return jsonify({"error": "Server bermasalah, cek log backend"}), 500
 
 
 
@@ -426,6 +640,21 @@ def upload_excel():
 def init_tables():
     conn = db()
     cur = conn.cursor()
+
+    # ============================================
+    # 0. TABEL KARYAWAN (BARU)
+    # ============================================
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS karyawan (
+            id_karyawan INT AUTO_INCREMENT PRIMARY KEY,
+            nik VARCHAR(30),
+            nama VARCHAR(100) NOT NULL,
+            jabatan VARCHAR(50),
+            dept VARCHAR(50),
+            UNIQUE KEY uk_nik_nama (nik, nama)  -- jika mau kombinasi unik (opsional)
+        );
+    """)
+
 
     # ============================================
     # 1. TABEL INFORMASI JADWAL (PARENT)
@@ -467,19 +696,25 @@ def init_tables():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS jadwal_karyawan (
             no INT AUTO_INCREMENT PRIMARY KEY,
-            id_absen VARCHAR(20),
+            id_karyawan INT NULL,
             nama VARCHAR(100),
             tanggal DATE,
             kode_shift VARCHAR(20),
+
             CONSTRAINT fk_jadwal_kode
                 FOREIGN KEY (kode_shift) REFERENCES informasi_jadwal(kode)
                 ON DELETE CASCADE
+                ON UPDATE CASCADE,
+
+            CONSTRAINT fk_jadwal_nik
+                FOREIGN KEY (id_karyawan) REFERENCES karyawan(id_karyawan)
+                ON DELETE SET NULL
                 ON UPDATE CASCADE
         )
     """)
 
     # ============================================
-    # 4. TABEL KEHADIRAN KARYAWAN (CHILD 3 - BARU)
+    # 4. TABEL KEHADIRAN KARYAWAN (CHILD 3)
     # ============================================
     cur.execute("""
         CREATE TABLE IF NOT EXISTS kehadiran_karyawan (
@@ -487,6 +722,7 @@ def init_tables():
             tanggal DATE NOT NULL,
             jam TIME NOT NULL,
             pin VARCHAR(20),
+            id_karyawan INT NULL,
             nip VARCHAR(20),
             nama VARCHAR(100) NOT NULL,
             jabatan VARCHAR(50),
@@ -497,16 +733,20 @@ def init_tables():
             workcode VARCHAR(20),
             sn VARCHAR(50),
             mesin VARCHAR(50),
-
-            -- KODE UNTUK RELASI JADWAL
             kode VARCHAR(20),
 
             CONSTRAINT fk_kehadiran_kode
                 FOREIGN KEY (kode) REFERENCES informasi_jadwal(kode)
-                ON DELETE SET NULL   -- AGAR data kehadiran tetap ada jika dihapus jadwalnya
+                ON DELETE SET NULL
+                ON UPDATE CASCADE,
+
+            CONSTRAINT fk_kehadiran_nik
+                FOREIGN KEY (id_karyawan) REFERENCES karyawan(id_karyawan)
+                ON DELETE SET NULL
                 ON UPDATE CASCADE
         )
     """)
+
 
     # ============================================
     # 5. TAMBAHKAN INDEX AGAR QUERY CEPAT (AMAN)
@@ -527,7 +767,24 @@ def init_tables():
         """)
     except:
         pass
+    
+    try:
+        cur.execute("""
+            ALTER TABLE kehadiran_karyawan 
+                ADD INDEX idx_khd_nik_tanggal (nik, tanggal),
+                ADD INDEX idx_khd_nama_tanggal (nama, tanggal_scan)
+        """)
+    except:
+        pass
 
+    try:
+        cur.execute("""
+            ALTER TABLE jadwal_karyawan 
+                ADD INDEX idx_jk_nik_tanggal (nik, tanggal),
+                ADD INDEX idx_jk_nama_tanggal (nama, tanggal)
+        """)
+    except:
+        pass
 
     conn.commit()
     cur.close()
@@ -578,12 +835,10 @@ def parse_month_year(month_year_str):
 
 
 # ============================================================
-# CRUD JADWAL KARYAWAN (DISESUAIKAN DENGAN KOLOM BARU: id_absen, nama, tanggal, kode_shift)
+# CRUD JADWAL KARYAWAN (DISESUAIKAN DENGAN KOLOM BARU: nik, nama, tanggal, kode_shift)
 # ============================================================
 
-# -----------------------
-# GET ALL jadwal_karyawan
-# -----------------------
+
 @app.route("/api/jadwal-karyawan/list", methods=["GET"])
 def get_jadwal_karyawan():
     try:
@@ -591,13 +846,13 @@ def get_jadwal_karyawan():
         cursor = conn.cursor(dictionary=True)
 
         cursor.execute("""
-            SELECT no, id_absen, nama, tanggal, kode_shift
-            FROM jadwal_karyawan
-            ORDER BY no ASC
+            SELECT jk.no, k.nik, k.nama, jk.tanggal, jk.kode_shift
+            FROM jadwal_karyawan jk
+            LEFT JOIN karyawan k ON jk.id_karyawan = k.id_karyawan
+            ORDER BY jk.no ASC
         """)
         rows = cursor.fetchall()
 
-        # Convert tanggal ke string agar JSON aman
         for row in rows:
             if row["tanggal"]:
                 row["tanggal"] = str(row["tanggal"])
@@ -609,6 +864,29 @@ def get_jadwal_karyawan():
     except Exception as e:
         print("ERROR GET JADWAL KARYAWAN:", e)
         return jsonify({"error": str(e)}), 500
+    
+    
+    
+@app.route("/api/informasi-jadwal/list", methods=["GET"])
+def get_informasi_jadwal():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT kode AS kode_shift, keterangan
+            FROM informasi_jadwal
+            ORDER BY kode ASC
+        """)
+        rows = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+        return jsonify(rows)
+
+    except Exception as e:
+        print("ERROR GET INFORMASI JADWAL:", e)
+        return jsonify({"error": str(e)}), 500
 
 
 
@@ -619,19 +897,27 @@ def get_jadwal_karyawan():
 def create_jadwal_karyawan():
     try:
         data = request.json
+        nik = data.get("nik")
+        kode_shift = data.get("kode_shift")
+        tanggal = data.get("tanggal")
 
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # Cari id_karyawan berdasarkan nik
+        cursor.execute("SELECT id_karyawan, nama FROM karyawan WHERE nik=%s", (nik,))
+        karyawan = cursor.fetchone()
+        if not karyawan:
+            return jsonify({"error": f"Karyawan dengan NIK {nik} tidak ditemukan"}), 404
+
+        id_karyawan = karyawan[0]
+        nama = karyawan[1]
+
+        # Insert
         cursor.execute("""
-            INSERT INTO jadwal_karyawan (id_absen, nama, tanggal, kode_shift)
+            INSERT INTO jadwal_karyawan (id_karyawan, nama, tanggal, kode_shift)
             VALUES (%s, %s, %s, %s)
-        """, (
-            data.get("id_absen"),
-            data.get("nama"),
-            data.get("tanggal"),
-            data.get("kode_shift")
-        ))
+        """, (id_karyawan, nama, tanggal, kode_shift))
 
         conn.commit()
         cursor.close()
@@ -645,6 +931,7 @@ def create_jadwal_karyawan():
 
 
 
+
 # -----------------------
 # UPDATE jadwal_karyawan
 # -----------------------
@@ -652,35 +939,38 @@ def create_jadwal_karyawan():
 def update_jadwal_karyawan(no):
     try:
         data = request.get_json(force=True)
-
-        nama = data.get("nama")
-        id_absen = data.get("id_absen")
-        tanggal = data.get("tanggal")
+        nik = data.get("nik")            # ambil NIK dari frontend
         kode_shift = data.get("kode_shift")
+        tanggal = data.get("tanggal")
+
+        if not nik:
+            return jsonify({"error": "NIK harus diisi"}), 400
 
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # cek apakah data ada
+        # Cek jadwal ada?
         cursor.execute("SELECT COUNT(*) FROM jadwal_karyawan WHERE no=%s", (no,))
         if cursor.fetchone()[0] == 0:
-            return jsonify({"error": "Data tidak ditemukan"}), 404
+            return jsonify({"error": "Data jadwal tidak ditemukan"}), 404
 
-        # update berdasarkan no (PK)
+        # Cari id_karyawan berdasarkan NIK
+        cursor.execute("SELECT id_karyawan, nama FROM karyawan WHERE nik=%s", (nik,))
+        karyawan = cursor.fetchone()
+        if not karyawan:
+            return jsonify({"error": f"Karyawan dengan NIK {nik} tidak ditemukan"}), 404
+
+        id_karyawan, nama_db = karyawan
+
+        # Update jadwal
         cursor.execute("""
             UPDATE jadwal_karyawan SET
-                id_absen=%s,
+                id_karyawan=%s,
                 nama=%s,
                 tanggal=%s,
                 kode_shift=%s
             WHERE no=%s
-        """, (
-            id_absen,
-            nama,
-            tanggal,
-            kode_shift,
-            no
-        ))
+        """, (id_karyawan, nama_db, tanggal, kode_shift, no))
 
         conn.commit()
         cursor.close()
@@ -691,6 +981,8 @@ def update_jadwal_karyawan(no):
     except Exception as e:
         print("ERROR UPDATE JADWAL KARYAWAN:", e)
         return jsonify({"error": str(e)}), 500
+
+
 
 
 
@@ -753,91 +1045,100 @@ def import_jadwal():
     try:
         df = pd.read_excel(file, header=None)
     except Exception as e:
-        return jsonify({
-            "error": f"Gagal membaca file Excel: {str(e)}"
-        }), 500
+        return jsonify({"error": f"Gagal membaca file Excel: {str(e)}"}), 500
 
     # Ambil bulan dan tahun
     try:
         month_year_str = str(df.iloc[1, 0]).strip()
         year, month = parse_month_year(month_year_str)
     except Exception as e:
-        return jsonify({
-            "error": f"Gagal parsing bulan/tahun: {str(e)}"
-        }), 400
+        return jsonify({"error": f"Gagal parsing bulan/tahun: {str(e)}"}), 400
 
     days_in_month = monthrange(year, month)[1]
-
-    # Data dimulai baris 6
     data = df.iloc[5:, :]
 
     conn = db()
     cur = conn.cursor()
 
-    # 🔥 Ambil semua kode valid dari tabel informasi_jadwal
+    # Ambil semua kode valid
     cur.execute("SELECT kode FROM informasi_jadwal")
     valid_kode_shift = {row[0].strip() for row in cur.fetchall()}
 
+    # Ambil semua id_karyawan dari database sekali saja
+    cur.execute("SELECT id_karyawan, nik, nama FROM karyawan")
+    karyawan_dict = {row[1]: {"id": row[0], "nama": row[2]} for row in cur.fetchall()}
+
     # Hapus jadwal lama bulan ini
-    cur.execute("""
-        DELETE FROM jadwal_karyawan
-        WHERE YEAR(tanggal)=%s AND MONTH(tanggal)=%s
-    """, (year, month))
+    cur.execute("DELETE FROM jadwal_karyawan WHERE YEAR(tanggal)=%s AND MONTH(tanggal)=%s", (year, month))
+    conn.commit()
 
     inserted_count = 0
-    invalid_codes = []  # untuk menyimpan error kode tidak dikenali
+    invalid_codes = []
+    batch_size = 500  # commit setiap 500 insert
+    batch_counter = 0
 
     for idx, row in data.iterrows():
-        id_absen = str(row[1]).strip() if pd.notna(row[1]) else ""
-        nama = str(row[2]).strip() if pd.notna(row[2]) else ""
+        nik = str(row[1]).strip() if pd.notna(row[1]) else ""
+        nama_excel = str(row[2]).strip() if pd.notna(row[2]) else ""
 
-        if not id_absen or not nama:
+        if not nik or nik not in karyawan_dict:
+            invalid_codes.append({
+                "nik": nik,
+                "nama": nama_excel,
+                "error": "Karyawan tidak ditemukan"
+            })
             continue
+
+        id_karyawan = karyawan_dict[nik]["id"]
+        nama = karyawan_dict[nik]["nama"]
 
         for col_idx in range(3, 3 + days_in_month):
             if col_idx >= len(row):
                 break
 
             raw_kode = row[col_idx]
-
             if pd.isna(raw_kode):
                 continue
 
             kode_shift = str(raw_kode).strip()
-
             if not kode_shift:
                 continue
 
-            # 🔥 CEK RELASI: apakah kode_shift ada di table informasi_jadwal?
             if kode_shift not in valid_kode_shift:
                 invalid_codes.append({
-                    "id_absen": id_absen,
+                    "nik": nik,
                     "nama": nama,
                     "tanggal": f"{year}-{month}-{col_idx-2}",
                     "kode_shift": kode_shift
                 })
-                continue  # JANGAN INSERT
+                continue
 
-            # Tanggal
             day = col_idx - 2
             tanggal = datetime(year, month, day).date()
 
-            # Insert data valid
             cur.execute("""
-                INSERT INTO jadwal_karyawan (id_absen, nama, tanggal, kode_shift)
+                INSERT INTO jadwal_karyawan (id_karyawan, nama, tanggal, kode_shift)
                 VALUES (%s, %s, %s, %s)
-            """, (id_absen, nama, tanggal, kode_shift))
+            """, (id_karyawan, nama, tanggal, kode_shift))
 
             inserted_count += 1
+            batch_counter += 1
 
-    conn.commit()
+            if batch_counter >= batch_size:
+                conn.commit()
+                batch_counter = 0
+
+    if batch_counter > 0:
+        conn.commit()
+
     cur.close()
     conn.close()
 
     return jsonify({
         "message": f"Import selesai! {inserted_count} data berhasil disimpan.",
-        "invalid_codes": invalid_codes  # tampilkan data yg gagal
+        "invalid_codes": invalid_codes
     })
+
 
 
 
@@ -848,9 +1149,7 @@ def import_kehadiran():
             return jsonify({"error": "File tidak ditemukan"}), 400
 
         file = request.files["file"]
-
-        df = pd.read_excel(file, header=1)
-        df = df.fillna("")
+        df = pd.read_excel(file, header=1).fillna("")
 
         if len(df) > 0:
             df = df.iloc[1:]
@@ -870,34 +1169,43 @@ def import_kehadiran():
 
         inserted_count = 0
         skipped_count = 0
+        not_found_name = []   # SIMPAN NAMA YANG GAGAL MATCH
 
         for _, row in df.iterrows():
             if str(row["Tanggal scan"]).strip() == "" or str(row["Tanggal"]).strip() == "":
                 skipped_count += 1
                 continue
 
-            # PARSE TANGGAL SCAN
+            # === validasi format tanggal / jam ===
             try:
-                tanggal_scan = pd.to_datetime(row["Tanggal scan"])
+                tanggal_scan = pd.to_datetime(row["Tanggal scan"], dayfirst=True)
+                tanggal_only = pd.to_datetime(row["Tanggal"], dayfirst=True).date()
+                jam_only = pd.to_datetime(row["Jam"], dayfirst=True).time()
             except:
-                return jsonify({"error": f"Format tanggal scan tidak valid: {row['Tanggal scan']}"}), 400
-
-            # PARSE TANGGAL
-            try:
-                tanggal_only = pd.to_datetime(row["Tanggal"]).date()
-            except:
-                return jsonify({"error": f"Format tanggal tidak valid: {row['Tanggal']}"}), 400
-
-            # PARSE JAM
-            try:
-                jam_only = pd.to_datetime(row["Jam"]).time()
-            except:
-                return jsonify({"error": f"Format jam tidak valid: {row['Jam']}"}), 400
+                skipped_count += 1
+                continue
 
             verifikasi = int(row["Verifikasi"]) if row["Verifikasi"] != "" else None
             io = int(row["I/O"]) if row["I/O"] != "" else None
 
-            # AMBIL KODE DARI JADWAL KARYAWAN
+            # ==========================================
+            # MATCH nama → id_karyawan dari tabel karyawan
+            # ==========================================
+            cur.execute("""
+                SELECT id_karyawan FROM karyawan WHERE nama = %s LIMIT 1
+            """, (row["Nama"],))
+            data_k = cur.fetchone()
+
+            if not data_k:
+                not_found_name.append(row["Nama"])
+                skipped_count += 1
+                continue
+
+            id_karyawan = data_k["id_karyawan"]
+
+            # ==========================================
+            # MATCH shift dari jadwal_karyawan
+            # ==========================================
             cur.execute("""
                 SELECT kode_shift 
                 FROM jadwal_karyawan
@@ -908,26 +1216,22 @@ def import_kehadiran():
             result = cur.fetchone()
             kode_shift = result["kode_shift"] if result else None
 
-            # INSERT
-            try:
-                cur.execute("""
-                    INSERT INTO kehadiran_karyawan (
-                        tanggal_scan, tanggal, jam,
-                        pin, nip, nama, jabatan, departemen, kantor,
-                        verifikasi, io, workcode, sn, mesin, kode
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    tanggal_scan, tanggal_only, jam_only,
-                    row["PIN"], row["NIP"], row["Nama"],
-                    row["Jabatan"], row["Departemen"], row["Kantor"],
-                    verifikasi, io, row["Workcode"], row["SN"], row["Mesin"],
-                    kode_shift
-                ))
-            except Exception as e:
-                conn.rollback()
-                print("INSERT ERROR:", e)
-                return jsonify({"error": f"Gagal insert data: {str(e)}"}), 400
+            # ==========================================
+            # INSERT DATA KEHADIRAN + id_karyawan
+            # ==========================================
+            cur.execute("""
+                INSERT INTO kehadiran_karyawan (
+                    id_karyawan, tanggal_scan, tanggal, jam,
+                    pin, nip, nama, jabatan, departemen, kantor,
+                    verifikasi, io, workcode, sn, mesin, kode
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                id_karyawan, tanggal_scan, tanggal_only, jam_only,
+                row["PIN"], row["NIP"], row["Nama"], row["Jabatan"], row["Departemen"], row["Kantor"],
+                verifikasi, io, row["Workcode"], row["SN"], row["Mesin"],
+                kode_shift
+            ))
 
             inserted_count += 1
 
@@ -935,13 +1239,18 @@ def import_kehadiran():
         cur.close()
         conn.close()
 
-        return jsonify({
-            "message": f"Import kehadiran selesai! {inserted_count} data disimpan, {skipped_count} dilewati."
-        })
+        message = f"{inserted_count} data berhasil disimpan, {skipped_count} dilewati."
+
+        if len(not_found_name) > 0:
+            message += f" ❗ Ada nama yang tidak ditemukan: {set(not_found_name)}"
+
+        return jsonify({"message": message})
 
     except Exception as e:
         print("IMPORT ERROR:", e)
         return jsonify({"error": str(e)}), 500
+
+
 
 
 
@@ -1024,12 +1333,13 @@ def proses_croscek():
             base.Kode_Shift,
             base.Jabatan,
             base.Departemen,
+            base.id_karyawan,
+            base.NIK,
             base.Jadwal_Masuk,
             base.Jadwal_Pulang,
             base.Actual_Masuk,
             base.Actual_Pulang,
 
-            -- STATUS KEHADIRAN (dengan pengecualian CT, CTT, EO, OF1, CTB)
             CASE
                 WHEN base.Kode_Shift IN ('CT','CTT','EO','OF1','CTB','X')
                     THEN ij.keterangan
@@ -1038,14 +1348,12 @@ def proses_croscek():
                 ELSE 'Hadir'
             END AS Status_Kehadiran,
 
-            -- STATUS MASUK
             CASE
                 WHEN base.Actual_Masuk IS NULL THEN 'Tidak scan masuk'
                 WHEN base.Actual_Masuk <= base.Scheduled_Start THEN 'Masuk Tepat Waktu'
                 ELSE 'Masuk Telat'
             END AS Status_Masuk,
 
-            -- STATUS PULANG
             CASE
                 WHEN base.Actual_Pulang IS NULL THEN 'Tidak scan pulang'
                 WHEN base.Actual_Pulang >= base.Scheduled_End THEN 'Pulang Tepat Waktu'
@@ -1058,115 +1366,105 @@ def proses_croscek():
                 jk.nama AS Nama,
                 jk.tanggal AS Tanggal,
                 jk.kode_shift AS Kode_Shift,
-
                 si.jam_masuk AS Jadwal_Masuk,
                 si.jam_pulang AS Jadwal_Pulang,
 
-                -- DETEKSI LINTAS HARI OTOMATIS (BUKAN DARI TABEL!)
-                CASE
-                    WHEN si.jam_pulang < si.jam_masuk THEN 1
-                    ELSE 0
-                END AS lintas_hari,
-
-                -- ambil jabatan terbaru hari itu
-                (
-                    SELECT k1.jabatan
-                    FROM kehadiran_karyawan k1
-                    WHERE k1.nama = jk.nama AND k1.tanggal = jk.tanggal
-                    ORDER BY k1.tanggal_scan DESC LIMIT 1
+                -- ambil dari master karyawan dulu, fallback jika tidak ada
+                COALESCE(
+                    k.jabatan,
+                    (
+                        SELECT k1.jabatan
+                        FROM kehadiran_karyawan k1
+                        WHERE k1.nama = jk.nama
+                        AND k1.tanggal = jk.tanggal
+                        ORDER BY k1.tanggal_scan ASC
+                        LIMIT 1
+                    )
                 ) AS Jabatan,
 
-                (
-                    SELECT k2.departemen
-                    FROM kehadiran_karyawan k2
-                    WHERE k2.nama = jk.nama AND k2.tanggal = jk.tanggal
-                    ORDER BY k2.tanggal_scan DESC LIMIT 1
+                COALESCE(
+                    k.dept,
+                    (
+                        SELECT k2.departemen
+                        FROM kehadiran_karyawan k2
+                        WHERE k2.nama = jk.nama
+                        AND k2.tanggal = jk.tanggal
+                        ORDER BY k2.tanggal_scan ASC
+                        LIMIT 1
+                    )
                 ) AS Departemen,
 
-                -- ===========================
-                -- SCHEDULE START
-                -- ===========================
+                -- 🔥 Tambahan wajib untuk SELECT luar
+                k.id_karyawan AS id_karyawan,
+                k.nik AS NIK,
+
                 CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) AS Scheduled_Start,
 
-                -- ===========================
-                -- SCHEDULE END
-                -- ===========================
                 CASE
                     WHEN si.jam_pulang < si.jam_masuk
                         THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
                     ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
                 END AS Scheduled_End,
 
-                -- ===========================
-                -- MASUK WINDOW (±4 JAM)
-                -- ===========================
                 (CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 4 HOUR) AS Range_Masuk_Start,
                 (CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR) AS Range_Masuk_End,
 
-                -- ===========================
-                -- PULANG WINDOW (±6 JAM)
-                -- ===========================
                 (
                     CASE WHEN si.jam_pulang < si.jam_masuk
                         THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
                         ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
-                    END
-                    - INTERVAL 6 HOUR
+                    END - INTERVAL 6 HOUR
                 ) AS Range_Pulang_Start,
 
                 (
                     CASE WHEN si.jam_pulang < si.jam_masuk
                         THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
                         ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
-                    END
-                    + INTERVAL 6 HOUR
+                    END + INTERVAL 6 HOUR
                 ) AS Range_Pulang_End,
 
-                -- ===========================
-                -- ACTUAL CLOCK IN
-                -- ===========================
+                -- MIN scanning masuk
                 (
                     SELECT MIN(k3.tanggal_scan)
                     FROM kehadiran_karyawan k3
                     WHERE k3.nama = jk.nama
                     AND k3.tanggal_scan BETWEEN
-                            (CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 4 HOUR)
+                        (CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 4 HOUR)
                         AND (CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR)
                 ) AS Actual_Masuk,
 
-                -- ===========================
-                -- ACTUAL CLOCK OUT
-                -- ===========================
+                -- MAX scanning pulang
                 (
                     SELECT MAX(k4.tanggal_scan)
                     FROM kehadiran_karyawan k4
                     WHERE k4.nama = jk.nama
                     AND k4.tanggal_scan BETWEEN
-                            (
-                                CASE WHEN si.jam_pulang < si.jam_masuk
-                                    THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
-                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
-                                END - INTERVAL 6 HOUR
-                            )
-                        AND (
-                                CASE WHEN si.jam_pulang < si.jam_masuk
-                                    THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
-                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
-                                END + INTERVAL 6 HOUR
-                            )
+                        (
+                            CASE WHEN si.jam_pulang < si.jam_masuk
+                                THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                                ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                            END - INTERVAL 6 HOUR
+                        )
+                        AND
+                        (
+                            CASE WHEN si.jam_pulang < si.jam_masuk
+                                THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                                ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                            END + INTERVAL 6 HOUR
+                        )
                 ) AS Actual_Pulang
 
             FROM jadwal_karyawan jk
-            LEFT JOIN shift_info si
-                ON jk.kode_shift = si.kode
+            LEFT JOIN shift_info si ON jk.kode_shift = si.kode
+            LEFT JOIN karyawan k ON jk.id_karyawan = k.id_karyawan
 
             GROUP BY
                 jk.nama, jk.tanggal, jk.kode_shift,
-                si.jam_masuk, si.jam_pulang
+                si.jam_masuk, si.jam_pulang, k.jabatan, k.dept, k.id_karyawan, k.nik
 
         ) AS base
-		LEFT JOIN informasi_jadwal ij
-   			ON ij.kode = base.Kode_Shift
+
+        LEFT JOIN informasi_jadwal ij ON ij.kode = base.Kode_Shift
         ORDER BY base.Nama, base.Tanggal;
         """
 

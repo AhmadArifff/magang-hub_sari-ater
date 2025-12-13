@@ -1,0 +1,24 @@
+selanjutnya tolong buatkan export dengan template seperti dibawah ini:
+1. kolom 1a-1ac di merge dan ada text "REKAPITULASI KEHADIRAN KARYAWAN" dengan font style Calibri ukuran font 11 dengan style bold dan italic dengan tampil center atau ditengah tengah.
+2. kolom 2a-2ac di merge dan ada text "SARI ATER HOT SPRINGS CIATER" dengan font style Calibri ukuran font 11 dengan style bold dan italic dengan tampil center atau ditengah tengah.
+3. kolom 3a-3ac di merge dan ada text "PERIODE : OKTOBER 2025" dengan font style Calibri ukuran font 11 dengan style bold dan italic dengan tampil center atau ditengah tengah dan bulan serta tahun diambil datanya berdasarkan data hasil proses croscek karyawan.
+4. kolom 4a-4ac dimerge dan tidak ada text, dan kolom 5a-5b sampai 8a-8b dimerge dan  ada text "NO.", dan kolom 5c sampai 8c dimerge dan  ada text "NAMA", dan kolom 5d sampai 8d dimerge dan  ada text "NIK", dan kolom 5e sampai 8e dimerge dan ada text ada text "JABATAN", dan kolom 5f sampai 8f dimerge dan  ada text "DEPARTEMEN", dan kolom 5g sampai 5ac dimerge dan ada text  "KEHADIRAN", dan kolom 6g sampai 6n dimerge dan ada text "REKAPITULASI", dan kolom 6g sampai 6o dimerge dan ada text "REKAPITULASI", dan kolom 6p sampai 6w dimerge dan ada text "TERLAMBAT", dan kolom 6x sampai 6y dimerge dan ada text "Pulang Awal", dan kolom 6z sampai 6ac dimerge dan ada text "TIDAK SCAN", dan kolom 7G-8G dimerge dan ada text "HADIR", dan kolom 7H-8H dimerge dan ada text "OFF", dan kolom 7I-8I dimerge dan ada text "SAKIT", dan kolom 7J-8J dimerge dan ada text "IZIN", dan kolom 7K-8K dimerge dan ada text "ALPA", dan kolom 7L-8L dimerge dan ada text "EO (EXTRA OFF)", dan kolom 7M-8M dimerge dan ada text "CUTI", dan kolom 7N-8N dimerge dan ada text "DINAS LUAR", dan kolom 7O-8O dimerge dan ada text "TOTAL HARI", dan kolom 7P-7Q dimerge dan ada text "1'-5'", dan kolom 7R-7S dimerge dan ada text "5'-10", dan kolom 7T-7U dimerge dan ada text "≥10'", dan kolom 8P-8Q ada text "Dgn Izin,Tanpa Izin", dan kolom 8R-8S ada text "Dgn Izin,Tanpa Izin", dan kolom 8T-8U ada text "Dgn Izin,Tanpa Izin", dan kolom 7V-8V dimerge dan ada text "∑ Dgn Izin", dan kolom 7W-8W dimerge dan ada text "∑ Tanpa Izin", dan kolom 7X-8X dimerge dan ada text "Dgn Izin", dan kolom 7Y-8Y dimerge dan ada text "Tanpa Izin", dan kolom 7Z-8Z dimerge dan ada text "DATANG", dan kolom 7AA-8AA dimerge dan ada text "PULANG", dan kolom 7AC-8AC dimerge dan ada text "TIDAK SUPPORT" dengan font style Calibri ukuran font 9 dengan style bold dan italic merupakan kolom header.
+5. dan kolom 9a-9ac merupakan isi data record dari hasil proses croscek, dan setiap sesudah departement di lewati 2 bari cells, dan ketika sesudah data trakhir setiap data karyawan departement jumlah untuk kehadirannya.
+dan untuk data sample hasilnya nanti seperti dibawah:
+	REKAPITULASI KEHADIRAN KARYAWAN																											
+	SARI ATER HOT SPRINGS CIATER																											
+PERIODE : OKTOBER 2025																												
+																												
+NO.		NAMA	NIK	JABATAN	DEPT	KEHADIRAN																						
+						REKAPITULASI									TERLAMBAT								Pulang Awal		TIDAK POSTING			
+						H	OFF	S	I	A	EO	CUTI	DINAS LUAR	TOTAL HARI	1'-5'		5'-10		≥10'		∑ Dgn Izin	∑ Tanpa Izin	Dgn Izin	Tanpa Izin	Datang	Pulang		Tidak Support
+															Dgn Izin	Tanpa Izin	Dgn Izin	Tanpa Izin	Dgn Izin	Tanpa Izin								
+1	1	IMAM RACHMAN NUGRAHA	210010174	DUTY MANAGER	A & G	9	7	0	0	0	4	0	0	20	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+2	2	TEDDY BUDIANA, S.PD	205060271	DUTY MANAGER	A & G	9	7	0	0	0	2	2	0	20	0	0	0	0	0	0	0	0	0	0	0	1	0	0
+3	3	ARI HERMOWO FARISWANTO	210180641	GENERAL MANAGER	A & G	16	2	0	0	0	0	2	0	20	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+						34	16	0	0	0	6	4	0	60	0	0	0	0	0	0	0	0	0	0	0	1		0
+																												
+4	1	AANG HASYIM ASHARI A	210220782	OUTLET CASHIER	ACCOUNTING	15	3	0	0	0	1	1	0	20	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+5	2	AGUS HIDAYAT	209010167	FO CASHIER	ACCOUNTING	11	2	3	0	0	1	3	0	20	0	0	0	0	0	0	0	0	0	0	0	1	0	0
+6	3	ANWAR SOLEH	201030185	CASHIER SPV	ACCOUNTING	15	2	0	0	0	2	1	0	20	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+7	4	ARI NOVRIZAL	206090340	CASHIER SPV	ACCOUNTING	15	3	0	0	0	1	1	0	20	0	0	0	0	0	0	0	0	0	1	0	3	0	0

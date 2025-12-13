@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { FileSpreadsheet, CheckSquare, Menu, X } from "lucide-react";
+import { FileSpreadsheet, CheckSquare, Menu, X, Users } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import sariAter from "../assets/sari-ater.png";
 
@@ -129,6 +129,7 @@ export default function Sidebar() {
   const menu = [
     { label: "Upload Informasi Jadwal", icon: FileSpreadsheet, path: "/" },
     { label: "Croscek Jadwal", icon: CheckSquare, path: "/croscek" },
+    { label: "Data Karyawan", icon: Users, path: "/karyawan" }
   ];
 
   return (

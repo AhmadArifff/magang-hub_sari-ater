@@ -51,3 +51,19 @@
   font-size: 12px;
 }
 
+.nama-dropdown {
+  z-index: 999999 !important;
+}
+.nama-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.nama-dropdown::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.nama-dropdown::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+

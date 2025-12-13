@@ -1,0 +1,1 @@
+1. jadwal karyawan disable kolom nama, dan hanya bisa update tanggalnya saja
