@@ -910,6 +910,20 @@ export default function Croscek() {
     } catch(e) { return String(t); }
   }
 
+  // helper: mendapatkan final status kehadiran dari reasonMap atau data asli
+  const getFinalStatusKehadiran = (row) => {
+    const selected = reasonMap?.[row.__uid];
+
+    // jika user pilih dari select
+    if (typeof selected === "string" && selected.trim() !== "") {
+      return selected.toUpperCase();
+    }
+
+    // fallback dari data asli
+    return (row.Status_Kehadiran || "").toUpperCase();
+  };
+
+
   // === FULL UPDATE Export Rekap Perhari (dengan blok TERLAMBAT) ===
   async function exportRekapPerhari() {
     try {
@@ -920,35 +934,41 @@ export default function Croscek() {
 
       const dataWithIndex = filteredData.map((r, idx) => ({ ...r, _idx: idx }));
 
-      // Pisahkan filter untuk bagian utama (sakit/izin/alpa/tidak hadir) dan terlambat
+      // // Pisahkan filter untuk bagian utama (sakit/izin/alpa/tidak hadir) dan terlambat
+      // const filteredRekapUtama = dataWithIndex.filter(row => {
+      //   // const status = (row.Status_Kehadiran || "").toUpperCase();
+      //   const selected = reasonMap?.[row.__uid];
+      //   // hanya selected atau status sakit/izin/alpa/tidak hadir, tanpa telat
+      //   // if (selected || ["ALPA","SAKIT","IZIN","TIDAK HADIR","DINAS LUAR"].includes(status)) {
+      //   //   return true;
+      //   // }
+      //   // return false;
+      //   if (
+      //     ["ALPA","SAKIT","IZIN","TIDAK HADIR","DINAS LUAR"].includes(status)
+      //   ) {
+      //     return true;
+      //   }
+
+      //   // jika ada selected, pastikan BUKAN TL & BUKAN PA
+      //   if (selected) {
+      //     const hasAbsenceReason =
+      //       selected.ALPA ||
+      //       selected.SAKIT ||
+      //       selected.IZIN ||
+      //       selected.TIDAK_HADIR ||
+      //       selected.DINAS_LUAR;
+
+      //     return Boolean(hasAbsenceReason);
+      //   }
+
+      //   return false;
+      // });
       const filteredRekapUtama = dataWithIndex.filter(row => {
-        const status = (row.Status_Kehadiran || "").toUpperCase();
-        const selected = reasonMap?.[row.__uid];
-        // hanya selected atau status sakit/izin/alpa/tidak hadir, tanpa telat
-        // if (selected || ["ALPA","SAKIT","IZIN","TIDAK HADIR","DINAS LUAR"].includes(status)) {
-        //   return true;
-        // }
-        // return false;
-        if (
-          ["ALPA","SAKIT","IZIN","TIDAK HADIR","DINAS LUAR"].includes(status)
-        ) {
-          return true;
-        }
+        const status = getFinalStatusKehadiran(row);
 
-        // jika ada selected, pastikan BUKAN TL & BUKAN PA
-        if (selected) {
-          const hasAbsenceReason =
-            selected.ALPA ||
-            selected.SAKIT ||
-            selected.IZIN ||
-            selected.TIDAK_HADIR ||
-            selected.DINAS_LUAR;
-
-          return Boolean(hasAbsenceReason);
-        }
-
-        return false;
+        return ["ALPA","SAKIT","IZIN","TIDAK HADIR","DINAS LUAR"].includes(status);
       });
+
 
       const filteredRekapTerlambat = dataWithIndex.filter(row => {
         const masuk = (row.Status_Masuk || "").toUpperCase();
@@ -1113,11 +1133,16 @@ export default function Croscek() {
             ws.mergeCells(`G${curRow}:I${curRow}`);
             // const keteranganVal = (r.Status_Kehadiran === "Tidak Hadir") ? ( getReason(r) || "Tidak Hadir" ) : (r.Status_Kehadiran || "");
             let keteranganVal = "";
-            if (["ALPA","SAKIT","IZIN","TIDAK HADIR","DINAS LUAR"].includes(
-              (r.Status_Kehadiran || "").toUpperCase()
-            )) {
-              keteranganVal = r.Status_Kehadiran;
+            // if (["ALPA","SAKIT","IZIN","TIDAK HADIR","DINAS LUAR"].includes(
+            //   (r.Status_Kehadiran || "").toUpperCase()
+            // )) {
+            //   keteranganVal = r.Status_Kehadiran;
+            // }
+            const finalStatus = getFinalStatusKehadiran(r);
+            if (["ALPA","SAKIT","IZIN","TIDAK HADIR","DINAS LUAR"].includes(finalStatus)) {
+              keteranganVal = finalStatus;
             }
+
             ws.getCell(`G${curRow}`).value = keteranganVal;
             ws.getCell(`G${curRow}`).font = { name:"Times New Roman", size:9 };
             ws.getCell(`G${curRow}`).alignment = { horizontal:"center", vertical:"middle" };
@@ -1384,21 +1409,14 @@ export default function Croscek() {
     return map;
   }
 
+  function formatDateFile(dateStr) {
+    const d = new Date(dateStr);
+    return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
+  }
+
 
   async function exportRekapKehadiran() {
     try {
-      // function applyReasonMap(data, reasonMap) {
-      //   return data.map(row => {
-      //     if (reasonMap[row.__uid]) {
-      //       return {
-      //         ...row,
-      //         Status_Kehadiran: reasonMap[row.__uid]   // gunakan status yg dipilih user
-      //       };
-      //     }
-      //     return row;
-      //   });
-      // }
-
       function applyReasonMap(data, reasonMap) {
         return data.map(row => {
           const rawReason = reasonMap[row.__uid];
@@ -1415,15 +1433,34 @@ export default function Croscek() {
 
           const isShiftOff = isEmptyTime(row.Jadwal_Masuk);
 
+          const STATUS_BEBAS_SCAN = [
+            "LIBUR",
+            "OFF",
+            "CUTI",
+            "CUTI TAHUNAN",
+            "CUTI ISTIMEWA",
+            "CUTI BERSAMA",
+            "DINAS LUAR",
+            "SAKIT",
+            "IZIN",
+            "ALPA"
+          ];
+
           const bebasScan =
-            isShiftOff ||
-            STATUS_TANPA_SCAN.includes(statusKehadiranFinal);
+            isShiftOff || STATUS_BEBAS_SCAN.includes(statusKehadiranFinal);
+
+          // 🔥 KUNCI UTAMA: hanya HADIR yang boleh dihitung tidak scan
+          const isHadir = statusKehadiranFinal === "HADIR";
 
           const tidakScanMasuk =
-            !bebasScan && isEmptyTime(row.Actual_Masuk);
+            isHadir &&
+            !bebasScan &&
+            isEmptyTime(row.Actual_Masuk);
 
           const tidakScanPulang =
-            !bebasScan && isEmptyTime(row.Actual_Pulang);
+            isHadir &&
+            !bebasScan &&
+            isEmptyTime(row.Actual_Pulang);
 
           return {
             ...row,
@@ -1436,7 +1473,6 @@ export default function Croscek() {
         });
       }
 
-      
       if (!filteredData || filteredData.length === 0) {
         alert("Tidak ada data untuk diexport.");
         return;
@@ -1454,485 +1490,408 @@ export default function Croscek() {
       }
 
       const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet("Rekap Kehadiran");
-
-      // Set kolom width (A sampai AC = 29 kolom)
-      ws.columns = Array(27).fill({ width: 12 });
-
-      // Freeze panes: kolom A-F dan baris 1-8
-      ws.views = [
-        {
-          state: "frozen",
-          ySplit: 8,  // Freeze baris 1-8
-          xSplit: 6   // Freeze kolom A-F (6 kolom)
-        }
-      ];
-      ws.getColumn("A").width = 6;
-      ws.getColumn("B").width = 8;
-      ws.getColumn("C").width = 30;
-      ws.getColumn("D").width = 15;
-      ws.getColumn("E").width = 35;
-      ws.getColumn("F").width = 20;
-
-      // ===== ROW 1: TITLE =====
-      ws.mergeCells("A1:AA1");
-      ws.getCell("A1").value = "REKAPITULASI KEHADIRAN KARYAWAN";
-      ws.getCell("A1").font = { name: "Calibri", size: 11, bold: true, italic: true };
-      ws.getCell("A1").alignment = { horizontal: "center", vertical:"middle" };
-      ws.getRow(1).height = 25;
-
-      // ===== ROW 2: COMPANY NAME =====
-      ws.mergeCells("A2:AA2");
-      ws.getCell("A2").value = "SARI ATER HOT SPRINGS CIATER";
-      ws.getCell("A2").font = { name: "Calibri", size: 11, bold: true, italic: true };
-      ws.getCell("A2").alignment = { horizontal: "center", vertical:"middle" };
-      ws.getRow(2).height = 25;
-
-      // ===== ROW 3: PERIODE =====
-      // Get periode dari filtered data (ambil bulan & tahun dari tanggal pertama)
-      const firstDate = new Date(filteredData[0].Tanggal);
-      const monthIdx = firstDate.getMonth();
-      const year = firstDate.getFullYear();
-      const monthNames = ["JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", "JULI", "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"];
-      const periodText = `PERIODE : ${monthNames[monthIdx]} ${year}`;
-
-      ws.mergeCells("A3:AA3");
-      ws.getCell("A3").value = periodText;
-      ws.getCell("A3").font = { name: "Calibri", size: 11, bold: true, italic: true };
-      ws.getCell("A3").alignment = { horizontal: "center", vertical:"middle" };
-      ws.getRow(3).height = 25;
-
-      // ===== ROW 4: EMPTY =====
-      ws.mergeCells("A4:AA4");
-      ws.getRow(4).height = 10;
-
-      // ===== ROW 5-8: HEADERS =====
-      // Row 5: Main headers
-      const headerCols = {
-        A: "NO.",
-        B: "NO.",
-        C: "NAMA",
-        D: "NIK",
-        E: "JABATAN",
-        F: "DEPARTEMEN",
-        G: "KEHADIRAN"
-      };
-
-      // Merge A5:B8 for NO.
-      ws.mergeCells("A5:B8");
-      ws.getCell("A5").value = "NO.";
-      ws.getCell("A5").font = { name: "Calibri", size: 9, bold: true, italic: true };
-      ws.getCell("A5").alignment = { horizontal: "center", vertical:"middle" };
-      ws.getCell("A5").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-      ws.getCell("A5").fill = { type:"pattern", pattern:"solid", fgColor:{argb:"FFD9D9D9"} };
-      
-      // Merge C5:C8 for NAMA
-      ws.mergeCells("C5:C8");
-      ws.getCell("C5").value = "NAMA";
-      ws.getCell("C5").font = { name: "Calibri", size: 9, bold: true, italic: true };
-      ws.getCell("C5").alignment = { horizontal: "center", vertical:"middle" };
-      ws.getCell("C5").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-      ws.getCell("C5").fill = { type:"pattern", pattern:"solid", fgColor:{argb:"FFD9D9D9"} };
-
-      // Merge D5:D8 for NIK
-      ws.mergeCells("D5:D8");
-      ws.getCell("D5").value = "NIK";
-      ws.getCell("D5").font = { name: "Calibri", size: 9, bold: true, italic: true };
-      ws.getCell("D5").alignment = { horizontal: "center", vertical:"middle" };
-      ws.getCell("D5").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-      ws.getCell("D5").fill = { type:"pattern", pattern:"solid", fgColor:{argb:"FFD9D9D9"} };
-
-      // Merge E5:E8 for JABATAN
-      ws.mergeCells("E5:E8");
-      ws.getCell("E5").value = "JABATAN";
-      ws.getCell("E5").font = { name: "Calibri", size: 9, bold: true, italic: true };
-      ws.getCell("E5").alignment = { horizontal: "center", vertical:"middle" };
-      ws.getCell("E5").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-      ws.getCell("E5").fill = { type:"pattern", pattern:"solid", fgColor:{argb:"FFD9D9D9"} };
-
-      // Merge F5:F8 for DEPARTEMEN
-      ws.mergeCells("F5:F8");
-      ws.getCell("F5").value = "DEPARTEMEN";
-      ws.getCell("F5").font = { name: "Calibri", size: 9, bold: true, italic: true };
-      ws.getCell("F5").alignment = { horizontal: "center", vertical:"middle" };
-      ws.getCell("F5").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-      ws.getCell("F5").fill = { type:"pattern", pattern:"solid", fgColor:{argb:"FFD9D9D9"} };
-
-      // Merge G5:AC5 for KEHADIRAN (main header)
-      ws.mergeCells("G5:AA5");
-      ws.getCell("G5").value = "KEHADIRAN";
-      ws.getCell("G5").font = { name: "Calibri", size: 9, bold: true, italic: true };
-      ws.getCell("G5").alignment = { horizontal: "center", vertical:"middle" };
-      ws.getCell("G5").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-      ws.getCell("G5").fill = { type:"pattern", pattern:"solid", fgColor:{argb:"FFD9D9D9"} };
-
-      // Row 6: Sub-headers (REKAPITULASI, TERLAMBAT, Pulang Awal, TIDAK Scan)
-      // Merge G6:N6 for REKAPITULASI
-      ws.mergeCells("G6:O6");
-      ws.getCell("G6").value = "REKAPITULASI";
-      ws.getCell("G6").font = { name: "Calibri", size: 9, bold: true, italic: true };
-      ws.getCell("G6").alignment = { horizontal: "center", vertical:"middle" };
-      ws.getCell("G6").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-      ws.getCell("G6").fill = { type:"pattern", pattern:"solid", fgColor:{argb:"FFD9D9D9"} };
-
-      // Merge O6:W6 for TERLAMBAT
-      ws.mergeCells("P6:W6");
-      ws.getCell("P6").value = "TERLAMBAT";
-      ws.getCell("P6").font = { name: "Calibri", size: 9, bold: true, italic: true };
-      ws.getCell("P6").alignment = { horizontal: "center", vertical:"middle" };
-      ws.getCell("P6").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-      ws.getCell("P6").fill = { type:"pattern", pattern:"solid", fgColor:{argb:"FFD9D9D9"} };
-
-      // Merge X6:Y6 for Pulang Awal
-      ws.mergeCells("X6:Y6");
-      ws.getCell("X6").value = "Pulang Awal";
-      ws.getCell("X6").font = { name: "Calibri", size: 9, bold: true, italic: true };
-      ws.getCell("X6").alignment = { horizontal: "center", vertical:"middle" };
-      ws.getCell("X6").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-      ws.getCell("X6").fill = { type:"pattern", pattern:"solid", fgColor:{argb:"FFD9D9D9"} };
-
-      // Merge Z6:AC6 for TIDAK SCAN
-      ws.mergeCells("Z6:AA6");
-      ws.getCell("Z6").value = "TIDAK SCAN";
-      ws.getCell("Z6").font = { name: "Calibri", size: 9, bold: true, italic: true };
-      ws.getCell("Z6").alignment = { horizontal: "center", vertical:"middle" };
-      ws.getCell("Z6").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-      ws.getCell("Z6").fill = { type:"pattern", pattern:"solid", fgColor:{argb:"FFD9D9D9"} };
-
-      // Row 7: Sub-sub-headers (H, OFF, S, I, A, EO, CUTI, DINAS LUAR, TOTAL HARI, 1'-5', 5'-10, ≥10', ∑ Dgn Izin, ∑ Tanpa Izin, Dgn Izin, Tanpa Izin, DATANG, PULANG, TIDAK SUPPORT)
-      const subHeaders7 = [
-        { col: "G", mergeRange: "G7:G8", text: "HADIR" },
-        { col: "H", mergeRange: "H7:H8", text: "OFF" },
-        { col: "I", mergeRange: "I7:I8", text: "SAKIT" },
-        { col: "J", mergeRange: "J7:J8", text: "IZIN" },
-        { col: "K", mergeRange: "K7:K8", text: "ALPA" },
-        { col: "L", mergeRange: "L7:L8", text: "EO (EXTRA OFF)" },
-        { col: "M", mergeRange: "M7:M8", text: "CUTI" },
-        { col: "N", mergeRange: "N7:N8", text: "DINAS LUAR" },
-        { col: "O", mergeRange: "O7:O8", text: "TOTAL HARI" },
-        { col: "P", mergeRange: "P7:Q7", text: "1'-5'" },
-        { col: "R", mergeRange: "R7:S7", text: "5'-10'" },
-        { col: "T", mergeRange: "T7:U7", text: "≥10'" },
-        { col: "V", mergeRange: "V7:V8", text: "∑ Dgn Izin" },
-        { col: "W", mergeRange: "W7:W8", text: "∑ Tanpa Izin" },
-        { col: "X", mergeRange: "X7:X8", text: "Dgn Izin" },
-        { col: "Y", mergeRange: "Y7:Y8", text: "Tanpa Izin" },
-        { col: "Z", mergeRange: "Z7:Z8", text: "DATANG" },
-        { col: "AA", mergeRange: "AA7:AA8", text: "PULANG" }
-      ];
-
-      subHeaders7.forEach(header => {
-        ws.mergeCells(header.mergeRange);
-        ws.getCell(`${header.col}7`).value = header.text;
-        ws.getCell(`${header.col}7`).font = { name: "Calibri", size: 9, bold: true, italic: true };
-        ws.getCell(`${header.col}7`).alignment = { horizontal: "center", vertical:"middle" };
-        ws.getCell(`${header.col}7`).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-        ws.getCell(`${header.col}7`).fill = { type:"pattern", pattern:"solid", fgColor:{argb:"FFD9D9D9"} };
-      });
-
-      // Row 8: Sub-sub-sub-headers (untuk kategori dengan 2 sub-kolom)
-      const row8Headers = [
-        { col: "P", text: "Dgn Izin" },
-        { col: "Q", text: "Tanpa Izin" },
-        { col: "R", text: "Dgn Izin" },
-        { col: "S", text: "Tanpa Izin" },
-        { col: "T", text: "Dgn Izin" },
-        { col: "U", text: "Tanpa Izin" }
-      ];
-
-      row8Headers.forEach(header => {
-        ws.getCell(`${header.col}8`).value = header.text;
-        ws.getCell(`${header.col}8`).font = { name: "Calibri", size: 9, bold: true, italic: true };
-        ws.getCell(`${header.col}8`).alignment = { horizontal: "center", vertical:"middle" };
-        ws.getCell(`${header.col}8`).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-        ws.getCell(`${header.col}8`).fill = { type:"pattern", pattern:"solid", fgColor:{argb:"FFD9D9D9"} };
-      });
-
-      // ===== FILL DATA ROWS (FIXED, REKAP PER KARYAWAN) =====
-      let currentRow = 9;
-
-      // --- Group + SUM per Karyawan ---
-      function groupAndSumByEmployee(data) {
-        const result = {};
-
-        data.forEach(r => {
-          const nik = r.NIK || r.NIP || r.nip || "";
-          if (!result[nik]) {
-            result[nik] = {
-              NIK: nik,
-              Nama: r.Nama || "",
-              Jabatan: r.Jabatan || "",
-              Departemen: r.Departemen || "",
-              hadir: 0,
-              off: 0,
-              sakit: 0,
-              izin: 0,
-              alpa: 0,
-              eo: 0,
-              cuti: 0,
-              dinas: 0,
-              total_hari: 0,
-              tl1_5_izin: 0,
-              tl1_5_tanpa: 0,
-              tl5_10_izin: 0,
-              tl5_10_tanpa: 0,
-              tl10_izin: 0,
-              tl10_tanpa: 0,
-              pa_izin: 0,
-              pa_tanpa: 0,
-              tidak_posting_datang: 0,
-              tidak_posting_pulang: 0,
-              tidak_support: 0
-            };
-          }
-
-          const emp = result[nik];
-
-          // ==== STATUS KEHADIRAN ====
-          // const st = (r.Status_Kehadiran || "").toUpperCase();
-          const st = (r.Status_Kehadiran || "").trim().toUpperCase();
-          // if (!st || st === "TIDAK HADIR") {
-          //   emp.alpa++;
-          // }
-
-
-          // if (st === "HADIR" || st === "LIBUR SETELAH MASUK DOBLE SHIFT") emp.hadir++;
-          if (st === "HADIR") emp.hadir++;
-          else if (st === "LIBUR") emp.off++;
-          else if (st === "SAKIT") emp.sakit++;
-          else if (st === "IZIN") emp.izin++;
-          else if (st === "ALPA") emp.alpa++;
-          else if (st === "EXTRAOFF" || st === "LIBUR SETELAH MASUK DOBLE SHIFT") emp.eo++;
-          else if (st === "CUTI TAHUNAN" || st === "CUTI ISTIMEWA" ||st === "CUTI BERSAMA" ) emp.cuti++;
-          else if (st === "DINAS LUAR") emp.dinas++;
-
-          // emp.total_hari++;
-          // hitung total hari berdasarkan kategori sah
-          for (const nik in result) {
-            const emp = result[nik];
-            emp.total_hari =
-              emp.hadir +
-              emp.off +
-              emp.sakit +
-              emp.izin +
-              emp.alpa +
-              emp.eo +
-              emp.cuti +
-              emp.dinas;
-          }
-
-          // ==== TERLAMBAT ====
-          const tl = r.TL_Code || "";
-
-          switch (tl) {
-            case "TL_1_5_D": emp.tl1_5_izin++; break;
-            case "TL_1_5_T": emp.tl1_5_tanpa++; break;
-
-            case "TL_5_10_D": emp.tl5_10_izin++; break;
-            case "TL_5_10_T": emp.tl5_10_tanpa++; break;
-
-            case "TL_10_D": emp.tl10_izin++; break;
-            case "TL_10_T": emp.tl10_tanpa++; break;
-          }
-
-          // total telat per kategori
-          emp.total_tl_izin =
-            emp.tl1_5_izin +
-            emp.tl5_10_izin +
-            emp.tl10_izin;
-
-          emp.total_tl_tanpa =
-            emp.tl1_5_tanpa +
-            emp.tl5_10_tanpa +
-            emp.tl10_tanpa;   // ✔️ sudah benar
-
-
-
-
-          // // ==== PULANG AWAL ====
-          // const pulang = (r.Status_Pulang || "").toUpperCase();
-          // if (pulang.includes("IZIN")) emp.pa_izin++;
-          // else if (pulang.includes("PULANG AWAL")) emp.pa_tanpa++;
-          // ==== PULANG AWAL (SUMBER TUNGGAL) ====
-          if (r.PA_Code === "PA_D") emp.pa_izin++;
-          else if (r.PA_Code === "PA_T") emp.pa_tanpa++;
-
-          
-          
-          // ==== TIDAK SCAN DARI STATUS ====
-          // if (r.TidakPostingDatang === 1) emp.tidak_posting_datang++;
-          // if (r.TidakPostingPulang === 1) emp.tidak_posting_pulang++;
-
-          // // ==== PULANG AWAL ====
-          // const pa = r.Status_Pulang || "";
-          // if (pa === "PULANG AWAL IZIN") emp.pa_izin++;
-          // else if (pa === "PULANG AWAL TANPA IZIN") emp.pa_tanpa++;
-
-
-          // ==== TIDAK POSTING ====
-          if (r.TidakPostingDatang === 1) emp.tidak_posting_datang++;
-          if (r.TidakPostingPulang === 1) emp.tidak_posting_pulang++;
-          if (r.TidakSupport === 1) emp.tidak_support++;
-        });
-        Object.values(result).forEach(emp => {
-          emp.total_hari =
-            emp.hadir +
-            emp.off +
-            emp.sakit +
-            emp.izin +
-            emp.alpa +
-            emp.eo +
-            emp.cuti +
-            emp.dinas;
-        });
-
-
-        return Object.values(result);
-      }
-
-      // gabungkan perubahan dari modal!
       const appliedData = applyReasonMap(filteredData, reasonMap);
+      const dataByMonth = groupByMonth(appliedData);
+      const monthKeys = Object.keys(dataByMonth).sort();
 
-      // sekarang rekap pakai data yang sudah disesuaikan
-      const grouped = groupAndSumByEmployee(appliedData);
+      const MONTH_NAMES = [
+        "JANUARI", "FEBRUARI", "MARET", "APRIL",
+        "MEI", "JUNI", "JULI", "AGUSTUS",
+        "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"
+      ];
 
-      function groupByDepartemen(data) {
-        const map = {};
 
-        data.forEach(emp => {
-          const dept = emp.Departemen || "TANPA DEPARTEMEN";
-          if (!map[dept]) map[dept] = [];
-          map[dept].push(emp);
-        });
+      monthKeys.forEach(monthKey => {
+        const monthlyData = dataByMonth[monthKey];
+        const [year, month] = monthKey.split('-');
+        const monthIdx = parseInt(month, 10) - 1;
+        const sheetName = `${MONTH_NAMES[monthIdx]} ${year}`;
+        const periodText = `PERIODE : ${MONTH_NAMES[monthIdx]} ${year}`;
 
-        return map;
-      }
+        // Buat sheet per bulan
+        const ws = wb.addWorksheet(sheetName);
 
-      const groupedByDept = groupByDepartemen(grouped);
+        // Set kolom width (A sampai AA = 27 kolom)
+        ws.columns = Array(27).fill({ width: 12 });
 
-      function sumDepartemen(list) {
-        const total = {
-          hadir: 0, off: 0, sakit: 0, izin: 0, alpa: 0,
-          eo: 0, cuti: 0, dinas: 0, total_hari: 0,
-          tl1_5_izin: 0, tl1_5_tanpa: 0,
-          tl5_10_izin: 0, tl5_10_tanpa: 0,
-          tl10_izin: 0, tl10_tanpa: 0,
-          total_tl_izin: 0,
-          total_tl_tanpa: 0,
-          pa_izin: 0,
-          pa_tanpa: 0,
-          tidak_posting_datang: 0,
-          tidak_posting_pulang: 0
+        // Freeze panes: kolom A-F dan baris 1-8
+        ws.views = [
+          {
+            state: "frozen",
+            ySplit: 8,  // Freeze baris 1-8
+            xSplit: 6   // Freeze kolom A-F (6 kolom)
+          }
+        ];
+        ws.getColumn("A").width = 6;
+        ws.getColumn("B").width = 8;
+        ws.getColumn("C").width = 30;
+        ws.getColumn("D").width = 15;
+        ws.getColumn("E").width = 35;
+        ws.getColumn("F").width = 20;
+
+        // ===== ROW 1: TITLE =====
+        ws.mergeCells("A1:AA1");
+        ws.getCell("A1").value = "REKAPITULASI KEHADIRAN KARYAWAN";
+        ws.getCell("A1").font = { name: "Calibri", size: 11, bold: true, italic: true };
+        ws.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
+        ws.getRow(1).height = 25;
+
+        // ===== ROW 2: COMPANY NAME =====
+        ws.mergeCells("A2:AA2");
+        ws.getCell("A2").value = "SARI ATER HOT SPRINGS CIATER";
+        ws.getCell("A2").font = { name: "Calibri", size: 11, bold: true, italic: true };
+        ws.getCell("A2").alignment = { horizontal: "center", vertical: "middle" };
+        ws.getRow(2).height = 25;
+
+        // ===== ROW 3: PERIODE =====
+        ws.mergeCells("A3:AA3");
+        ws.getCell("A3").value = periodText;
+        ws.getCell("A3").font = { name: "Calibri", size: 11, bold: true, italic: true };
+        ws.getCell("A3").alignment = { horizontal: "center", vertical: "middle" };
+        ws.getRow(3).height = 25;
+
+        // ===== ROW 4: EMPTY =====
+        ws.mergeCells("A4:AA4");
+        ws.getRow(4).height = 10;
+
+        // ===== ROW 5-8: HEADERS =====
+        // Row 5: Main headers
+        const headerCols = {
+          A: "NO.",
+          B: "NO.",
+          C: "NAMA",
+          D: "NIK",
+          E: "JABATAN",
+          F: "DEPARTEMEN",
+          G: "KEHADIRAN"
         };
 
-        list.forEach(e => {
-          Object.keys(total).forEach(k => {
-            total[k] += e[k] || 0;
-          });
+        // Merge A5:B8 for NO.
+        ws.mergeCells("A5:B8");
+        ws.getCell("A5").value = "NO.";
+        ws.getCell("A5").font = { name: "Calibri", size: 9, bold: true, italic: true };
+        ws.getCell("A5").alignment = { horizontal: "center", vertical: "middle" };
+        ws.getCell("A5").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        ws.getCell("A5").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+
+        // Merge C5:C8 for NAMA
+        ws.mergeCells("C5:C8");
+        ws.getCell("C5").value = "NAMA";
+        ws.getCell("C5").font = { name: "Calibri", size: 9, bold: true, italic: true };
+        ws.getCell("C5").alignment = { horizontal: "center", vertical: "middle" };
+        ws.getCell("C5").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        ws.getCell("C5").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+
+        // Merge D5:D8 for NIK
+        ws.mergeCells("D5:D8");
+        ws.getCell("D5").value = "NIK";
+        ws.getCell("D5").font = { name: "Calibri", size: 9, bold: true, italic: true };
+        ws.getCell("D5").alignment = { horizontal: "center", vertical: "middle" };
+        ws.getCell("D5").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        ws.getCell("D5").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+
+        // Merge E5:E8 for JABATAN
+        ws.mergeCells("E5:E8");
+        ws.getCell("E5").value = "JABATAN";
+        ws.getCell("E5").font = { name: "Calibri", size: 9, bold: true, italic: true };
+        ws.getCell("E5").alignment = { horizontal: "center", vertical: "middle" };
+        ws.getCell("E5").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        ws.getCell("E5").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+
+        // Merge F5:F8 for DEPARTEMEN
+        ws.mergeCells("F5:F8");
+        ws.getCell("F5").value = "DEPARTEMEN";
+        ws.getCell("F5").font = { name: "Calibri", size: 9, bold: true, italic: true };
+        ws.getCell("F5").alignment = { horizontal: "center", vertical: "middle" };
+        ws.getCell("F5").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        ws.getCell("F5").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+
+              // Merge G5:AA5 for KEHADIRAN (main header)
+        ws.mergeCells("G5:AA5");
+        ws.getCell("G5").value = "KEHADIRAN";
+        ws.getCell("G5").font = { name: "Calibri", size: 9, bold: true, italic: true };
+        ws.getCell("G5").alignment = { horizontal: "center", vertical: "middle" };
+        ws.getCell("G5").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        ws.getCell("G5").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+
+        // Row 6: Sub-headers (REKAPITULASI, TERLAMBAT, Pulang Awal, TIDAK Scan)
+        // Merge G6:N6 for REKAPITULASI
+        ws.mergeCells("G6:N6");
+        ws.getCell("G6").value = "REKAPITULASI";
+        ws.getCell("G6").font = { name: "Calibri", size: 9, bold: true, italic: true };
+        ws.getCell("G6").alignment = { horizontal: "center", vertical: "middle" };
+        ws.getCell("G6").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        ws.getCell("G6").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+
+        // Merge O6:W6 for TERLAMBAT (diperbaiki dari P6:W6 ke O6:W6 sesuai kode asli Anda)
+        ws.mergeCells("O6:W6");
+        ws.getCell("O6").value = "TERLAMBAT";
+        ws.getCell("O6").font = { name: "Calibri", size: 9, bold: true, italic: true };
+        ws.getCell("O6").alignment = { horizontal: "center", vertical: "middle" };
+        ws.getCell("O6").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        ws.getCell("O6").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+
+        // Merge X6:Y6 for Pulang Awal
+        ws.mergeCells("X6:Y6");
+        ws.getCell("X6").value = "Pulang Awal";
+        ws.getCell("X6").font = { name: "Calibri", size: 9, bold: true, italic: true };
+        ws.getCell("X6").alignment = { horizontal: "center", vertical: "middle" };
+        ws.getCell("X6").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        ws.getCell("X6").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+
+        // Merge Z6:AA6 for TIDAK SCAN
+        ws.mergeCells("Z6:AA6");
+        ws.getCell("Z6").value = "TIDAK SCAN";
+        ws.getCell("Z6").font = { name: "Calibri", size: 9, bold: true, italic: true };
+        ws.getCell("Z6").alignment = { horizontal: "center", vertical: "middle" };
+        ws.getCell("Z6").border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        ws.getCell("Z6").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+
+        // Row 7: Sub-sub-headers (H, OFF, S, I, A, EO, CUTI, DINAS LUAR, TOTAL HARI, 1'-5', 5'-10, ≥10', ∑ Dgn Izin, ∑ Tanpa Izin, Dgn Izin, Tanpa Izin, DATANG, PULANG, TIDAK SUPPORT)
+        const subHeaders7 = [
+          { col: "G", mergeRange: "G7:G8", text: "HADIR" },
+          { col: "H", mergeRange: "H7:H8", text: "OFF" },
+          { col: "I", mergeRange: "I7:I8", text: "SAKIT" },
+          { col: "J", mergeRange: "J7:J8", text: "IZIN" },
+          { col: "K", mergeRange: "K7:K8", text: "ALPA" },
+          { col: "L", mergeRange: "L7:L8", text: "EO (EXTRA OFF)" },
+          { col: "M", mergeRange: "M7:M8", text: "CUTI" },
+          { col: "N", mergeRange: "N7:N8", text: "DINAS LUAR" },
+          { col: "O", mergeRange: "O7:O8", text: "TOTAL HARI" },
+          { col: "P", mergeRange: "P7:Q7", text: "1'-5'" },
+          { col: "R", mergeRange: "R7:S7", text: "5'-10'" },
+          { col: "T", mergeRange: "T7:U7", text: "≥10'" },
+          { col: "V", mergeRange: "V7:V8", text: "∑ Dgn Izin" },
+          { col: "W", mergeRange: "W7:W8", text: "∑ Tanpa Izin" },
+          { col: "X", mergeRange: "X7:X8", text: "Dgn Izin" },
+          { col: "Y", mergeRange: "Y7:Y8", text: "Tanpa Izin" },
+          { col: "Z", mergeRange: "Z7:Z8", text: "DATANG" },
+          { col: "AA", mergeRange: "AA7:AA8", text: "PULANG" }
+        ];
+
+        subHeaders7.forEach(header => {
+          ws.mergeCells(header.mergeRange);
+          ws.getCell(`${header.col}7`).value = header.text;
+          ws.getCell(`${header.col}7`).font = { name: "Calibri", size: 9, bold: true, italic: true };
+          ws.getCell(`${header.col}7`).alignment = { horizontal: "center", vertical: "middle" };
+          ws.getCell(`${header.col}7`).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+          ws.getCell(`${header.col}7`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
         });
 
-        return total;
-      }
+        // Row 8: Sub-sub-sub-headers (untuk kategori dengan 2 sub-kolom)
+        const row8Headers = [
+          { col: "P", text: "Dgn Izin" },
+          { col: "Q", text: "Tanpa Izin" },
+          { col: "R", text: "Dgn Izin" },
+          { col: "S", text: "Tanpa Izin" },
+          { col: "T", text: "Dgn Izin" },
+          { col: "U", text: "Tanpa Izin" }
+        ];
 
-      // const grouped = groupAndSumByEmployee(filteredData);
+        row8Headers.forEach(header => {
+          ws.getCell(`${header.col}8`).value = header.text;
+          ws.getCell(`${header.col}8`).font = { name: "Calibri", size: 9, bold: true, italic: true };
+          ws.getCell(`${header.col}8`).alignment = { horizontal: "center", vertical: "middle" };
+          ws.getCell(`${header.col}8`).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+          ws.getCell(`${header.col}8`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+        });
 
-      // grouped.forEach((emp, index) => {
-      //   ws.getCell(`A${currentRow}`).value = index + 1;
-      //   ws.getCell(`B${currentRow}`).value = index + 1;
-      //   ws.getCell(`C${currentRow}`).value = emp.Nama;
-      //   ws.getCell(`D${currentRow}`).value = emp.NIK;
-      //   ws.getCell(`E${currentRow}`).value = emp.Jabatan;
-      //   ws.getCell(`F${currentRow}`).value = emp.Departemen;
+        // ===== FILL DATA ROWS (FIXED, REKAP PER KARYAWAN) =====
+        let currentRow = 9;
 
-      //   ws.getCell(`G${currentRow}`).value = emp.hadir;
-      //   ws.getCell(`H${currentRow}`).value = emp.off;
-      //   ws.getCell(`I${currentRow}`).value = emp.sakit;
-      //   ws.getCell(`J${currentRow}`).value = emp.izin;
-      //   ws.getCell(`K${currentRow}`).value = emp.alpa;
-      //   ws.getCell(`L${currentRow}`).value = emp.eo;
-      //   ws.getCell(`M${currentRow}`).value = emp.cuti;
-      //   ws.getCell(`N${currentRow}`).value = emp.dinas;
+        // --- Group + SUM per Karyawan ---
+        function groupAndSumByEmployee(data) {
+          const result = {};
 
-      //   ws.getCell(`O${currentRow}`).value = emp.total_hari;
+          data.forEach(r => {
+            const nik = r.NIK || r.NIP || r.nip || "";
+            if (!result[nik]) {
+              result[nik] = {
+                NIK: nik,
+                Nama: r.Nama || "",
+                Jabatan: r.Jabatan || "",
+                Departemen: r.Departemen || "",
+                hadir: 0,
+                off: 0,
+                sakit: 0,
+                izin: 0,
+                alpa: 0,
+                eo: 0,
+                cuti: 0,
+                dinas: 0,
+                total_hari: 0,
+                tl1_5_izin: 0,
+                tl1_5_tanpa: 0,
+                tl5_10_izin: 0,
+                tl5_10_tanpa: 0,
+                tl10_izin: 0,
+                tl10_tanpa: 0,
+                pa_izin: 0,
+                pa_tanpa: 0,
+                tidak_posting_datang: 0,
+                tidak_posting_pulang: 0,
+                tidak_support: 0
+              };
+            }
 
-      //   ws.getCell(`P${currentRow}`).value = emp.tl1_5_izin;
-      //   ws.getCell(`Q${currentRow}`).value = emp.tl1_5_tanpa;
-      //   ws.getCell(`R${currentRow}`).value = emp.tl5_10_izin;
-      //   ws.getCell(`S${currentRow}`).value = emp.tl5_10_tanpa;
-      //   ws.getCell(`T${currentRow}`).value = emp.tl10_izin;
-      //   ws.getCell(`U${currentRow}`).value = emp.tl10_tanpa;
+            const emp = result[nik];
 
-      //   // ∑ DENGAN IZIN (TOTAL TELAT DENGAN IZIN)
-      //   ws.getCell(`V${currentRow}`).value = emp.total_tl_izin;
+            // ==== STATUS KEHADIRAN ====
+            const st = (r.Status_Kehadiran || "").trim().toUpperCase();
+            if (st === "HADIR") emp.hadir++;
+            else if (st === "LIBUR") emp.off++;
+            else if (st === "SAKIT") emp.sakit++;
+            else if (st === "IZIN") emp.izin++;
+            else if (st === "ALPA") emp.alpa++;
+            else if (st === "EXTRAOFF" || st === "LIBUR SETELAH MASUK DOBLE SHIFT") emp.eo++;
+            else if (st === "CUTI TAHUNAN" || st === "CUTI ISTIMEWA" || st === "CUTI BERSAMA") emp.cuti++;
+            else if (st === "DINAS LUAR") emp.dinas++;
 
-      //   // ∑ TANPA IZIN (TOTAL TELAT TANPA IZIN)
-      //   ws.getCell(`W${currentRow}`).value = emp.total_tl_tanpa;
+            // ==== TERLAMBAT ====
+            const tl = r.TL_Code || "";
+            switch (tl) {
+              case "TL_1_5_D": emp.tl1_5_izin++; break;
+              case "TL_1_5_T": emp.tl1_5_tanpa++; break;
+              case "TL_5_10_D": emp.tl5_10_izin++; break;
+              case "TL_5_10_T": emp.tl5_10_tanpa++; break;
+              case "TL_10_D": emp.tl10_izin++; break;
+              case "TL_10_T": emp.tl10_tanpa++; break;
+            }
 
-      //   // PULANG AWAL
-      //   ws.getCell(`X${currentRow}`).value = emp.pa_izin;
-      //   ws.getCell(`Y${currentRow}`).value = emp.pa_tanpa;
+            emp.total_tl_izin = emp.tl1_5_izin + emp.tl5_10_izin + emp.tl10_izin;
+            emp.total_tl_tanpa = emp.tl1_5_tanpa + emp.tl5_10_tanpa + emp.tl10_tanpa;
 
-      //   // TIDAK SCAN
-      //   ws.getCell(`Z${currentRow}`).value = emp.tidak_posting_datang;
-      //   ws.getCell(`AA${currentRow}`).value = emp.tidak_posting_pulang;
+            // ==== PULANG AWAL ====
+            if (r.PA_Code === "PA_D") emp.pa_izin++;
+            else if (r.PA_Code === "PA_T") emp.pa_tanpa++;
 
+            // ==== TIDAK POSTING ====
+            if (r.TidakPostingDatang === 1) emp.tidak_posting_datang++;
+            if (r.TidakPostingPulang === 1) emp.tidak_posting_pulang++;
+            if (r.TidakSupport === 1) emp.tidak_support++;
+          });
 
+          Object.values(result).forEach(emp => {
+            emp.total_hari = emp.hadir + emp.off + emp.sakit + emp.izin + emp.alpa + emp.eo + emp.cuti + emp.dinas;
+          });
 
-      //   // Borders
-      //   for (let c = 1; c <= 27; c++) {
-      //     const col = getColumnLetter(c);
-      //     ws.getCell(`${col}${currentRow}`).border = { 
-      //       top: { style: "thin" }, 
-      //       left: { style: "thin" }, 
-      //       bottom: { style: "thin" }, 
-      //       right: { style: "thin" } 
-      //     };
-      //     ws.getCell(`${col}${currentRow}`).alignment = { horizontal: "center", vertical:"middle" };
-      //     ws.getCell(`${col}${currentRow}`).font = { name: "Calibri", size: 9 };
-      //   }
+          return Object.values(result);
+        }
 
-      //   currentRow++;
-      // });
-      let noGlobal = 1;
+        const grouped = groupAndSumByEmployee(monthlyData);
 
-      Object.entries(groupedByDept).forEach(([dept, employees]) => {
+        function groupByDepartemen(data) {
+          const map = {};
+          data.forEach(emp => {
+            const dept = emp.Departemen || "TANPA DEPARTEMEN";
+            if (!map[dept]) map[dept] = [];
+            map[dept].push(emp);
+          });
+          return map;
+        }
 
-        let noDept = 1;
-        const subtotal = sumDepartemen(employees);
+        function sumDepartemen(list) {
+          const total = {
+            hadir: 0, off: 0, sakit: 0, izin: 0, alpa: 0,
+            eo: 0, cuti: 0, dinas: 0, total_hari: 0,
+            tl1_5_izin: 0, tl1_5_tanpa: 0,
+            tl5_10_izin: 0, tl5_10_tanpa: 0,
+            tl10_izin: 0, tl10_tanpa: 0,
+            total_tl_izin: 0, total_tl_tanpa: 0,
+            pa_izin: 0, pa_tanpa: 0,
+            tidak_posting_datang: 0, tidak_posting_pulang: 0
+          };
+          list.forEach(e => {
+            Object.keys(total).forEach(k => {
+              total[k] += e[k] || 0;
+            });
+          });
+          return total;
+        }
 
-        // === DATA PER KARYAWAN ===
-        employees.forEach(emp => {
-          ws.getCell(`A${currentRow}`).value = noGlobal++;
-          ws.getCell(`B${currentRow}`).value = noDept++;
-          ws.getCell(`C${currentRow}`).value = emp.Nama;
-          ws.getCell(`D${currentRow}`).value = emp.NIK;
-          ws.getCell(`E${currentRow}`).value = emp.Jabatan;
-          ws.getCell(`F${currentRow}`).value = dept;
+        const groupedByDept = groupByDepartemen(grouped);
+        let noGlobal = 1;
 
-          ws.getCell(`G${currentRow}`).value = emp.hadir;
-          ws.getCell(`H${currentRow}`).value = emp.off;
-          ws.getCell(`I${currentRow}`).value = emp.sakit;
-          ws.getCell(`J${currentRow}`).value = emp.izin;
-          ws.getCell(`K${currentRow}`).value = emp.alpa;
-          ws.getCell(`L${currentRow}`).value = emp.eo;
-          ws.getCell(`M${currentRow}`).value = emp.cuti;
-          ws.getCell(`N${currentRow}`).value = emp.dinas;
-          ws.getCell(`O${currentRow}`).value = emp.total_hari;
+        Object.entries(groupedByDept).forEach(([dept, employees]) => {
+          let noDept = 1;
+          const subtotal = sumDepartemen(employees);
 
-          ws.getCell(`P${currentRow}`).value = emp.tl1_5_izin;
-          ws.getCell(`Q${currentRow}`).value = emp.tl1_5_tanpa;
-          ws.getCell(`R${currentRow}`).value = emp.tl5_10_izin;
-          ws.getCell(`S${currentRow}`).value = emp.tl5_10_tanpa;
-          ws.getCell(`T${currentRow}`).value = emp.tl10_izin;
-          ws.getCell(`U${currentRow}`).value = emp.tl10_tanpa;
-          ws.getCell(`V${currentRow}`).value = emp.total_tl_izin;
-          ws.getCell(`W${currentRow}`).value = emp.total_tl_tanpa;
-          ws.getCell(`X${currentRow}`).value = emp.pa_izin;
-          ws.getCell(`Y${currentRow}`).value = emp.pa_tanpa;
-          ws.getCell(`Z${currentRow}`).value = emp.tidak_posting_datang;
-          ws.getCell(`AA${currentRow}`).value = emp.tidak_posting_pulang;
+          // === DATA PER KARYAWAN ===
+          employees.forEach(emp => {
+            ws.getCell(`A${currentRow}`).value = noGlobal++;
+            ws.getCell(`B${currentRow}`).value = noDept++;
+            ws.getCell(`C${currentRow}`).value = emp.Nama;
+            ws.getCell(`D${currentRow}`).value = emp.NIK;
+            ws.getCell(`E${currentRow}`).value = emp.Jabatan;
+            ws.getCell(`F${currentRow}`).value = dept;
 
-          // Borders
+            ws.getCell(`G${currentRow}`).value = emp.hadir;
+            ws.getCell(`H${currentRow}`).value = emp.off;
+            ws.getCell(`I${currentRow}`).value = emp.sakit;
+            ws.getCell(`J${currentRow}`).value = emp.izin;
+            ws.getCell(`K${currentRow}`).value = emp.alpa;
+            ws.getCell(`L${currentRow}`).value = emp.eo;
+            ws.getCell(`M${currentRow}`).value = emp.cuti;
+            ws.getCell(`N${currentRow}`).value = emp.dinas;
+            ws.getCell(`O${currentRow}`).value = emp.total_hari;
+
+            ws.getCell(`P${currentRow}`).value = emp.tl1_5_izin;
+            ws.getCell(`Q${currentRow}`).value = emp.tl1_5_tanpa;
+            ws.getCell(`R${currentRow}`).value = emp.tl5_10_izin;
+            ws.getCell(`S${currentRow}`).value = emp.tl5_10_tanpa;
+            ws.getCell(`T${currentRow}`).value = emp.tl10_izin;
+            ws.getCell(`U${currentRow}`).value = emp.tl10_tanpa;
+            ws.getCell(`V${currentRow}`).value = emp.total_tl_izin;
+            ws.getCell(`W${currentRow}`).value = emp.total_tl_tanpa;
+            ws.getCell(`X${currentRow}`).value = emp.pa_izin;
+            ws.getCell(`Y${currentRow}`).value = emp.pa_tanpa;
+            ws.getCell(`Z${currentRow}`).value = emp.tidak_posting_datang;
+            ws.getCell(`AA${currentRow}`).value = emp.tidak_posting_pulang;
+
+            // Borders
+            for (let c = 1; c <= 27; c++) {
+              const col = getColumnLetter(c);
+              ws.getCell(`${col}${currentRow}`).border = { 
+                top: { style: "thin" }, 
+                left: { style: "thin" }, 
+                bottom: { style: "thin" }, 
+                right: { style: "thin" } 
+              };
+              ws.getCell(`${col}${currentRow}`).alignment = { horizontal: "center", vertical: "middle" };
+              ws.getCell(`${col}${currentRow}`).font = { name: "Calibri", size: 9 };
+            }
+            currentRow++;
+          });
+
+                  // === SUBTOTAL DIVISI ===
+          ws.getCell(`C${currentRow}`).value = `TOTAL ${dept}`;
+          ws.mergeCells(`C${currentRow}:F${currentRow}`);
+          ws.getCell(`C${currentRow}`).font = { bold: true };
+
+          ws.getCell(`G${currentRow}`).value = subtotal.hadir;
+          ws.getCell(`H${currentRow}`).value = subtotal.off;
+          ws.getCell(`I${currentRow}`).value = subtotal.sakit;
+          ws.getCell(`J${currentRow}`).value = subtotal.izin;
+          ws.getCell(`K${currentRow}`).value = subtotal.alpa;
+          ws.getCell(`L${currentRow}`).value = subtotal.eo;
+          ws.getCell(`M${currentRow}`).value = subtotal.cuti;
+          ws.getCell(`N${currentRow}`).value = subtotal.dinas;
+          ws.getCell(`O${currentRow}`).value = subtotal.total_hari;
+
+          ws.getCell(`P${currentRow}`).value = subtotal.tl1_5_izin;
+          ws.getCell(`Q${currentRow}`).value = subtotal.tl1_5_tanpa;
+          ws.getCell(`R${currentRow}`).value = subtotal.tl5_10_izin;
+          ws.getCell(`S${currentRow}`).value = subtotal.tl5_10_tanpa;
+          ws.getCell(`T${currentRow}`).value = subtotal.tl10_izin;
+          ws.getCell(`U${currentRow}`).value = subtotal.tl10_tanpa;
+          ws.getCell(`V${currentRow}`).value = subtotal.total_tl_izin;
+          ws.getCell(`W${currentRow}`).value = subtotal.total_tl_tanpa;
+          ws.getCell(`X${currentRow}`).value = subtotal.pa_izin;
+          ws.getCell(`Y${currentRow}`).value = subtotal.pa_tanpa;
+          ws.getCell(`Z${currentRow}`).value = subtotal.tidak_posting_datang;
+          ws.getCell(`AA${currentRow}`).value = subtotal.tidak_posting_pulang;
+
+          // Borders untuk subtotal
           for (let c = 1; c <= 27; c++) {
             const col = getColumnLetter(c);
             ws.getCell(`${col}${currentRow}`).border = { 
@@ -1941,50 +1900,33 @@ export default function Croscek() {
               bottom: { style: "thin" }, 
               right: { style: "thin" } 
             };
-            ws.getCell(`${col}${currentRow}`).alignment = { horizontal: "center", vertical:"middle" };
+            ws.getCell(`${col}${currentRow}`).alignment = { horizontal: "center", vertical: "middle" };
             ws.getCell(`${col}${currentRow}`).font = { name: "Calibri", size: 9 };
           }
+
           currentRow++;
+
+          // === 2 BARIS KOSONG ===
+          currentRow += 2;
         });
-
-        // === SUBTOTAL DIVISI ===
-        ws.getCell(`C${currentRow}`).value = `TOTAL ${dept}`;
-        ws.mergeCells(`C${currentRow}:F${currentRow}`);
-        ws.getCell(`C${currentRow}`).font = { bold: true };
-
-        ws.getCell(`G${currentRow}`).value = subtotal.hadir;
-        ws.getCell(`H${currentRow}`).value = subtotal.off;
-        ws.getCell(`I${currentRow}`).value = subtotal.sakit;
-        ws.getCell(`J${currentRow}`).value = subtotal.izin;
-        ws.getCell(`K${currentRow}`).value = subtotal.alpa;
-        ws.getCell(`L${currentRow}`).value = subtotal.eo;
-        ws.getCell(`M${currentRow}`).value = subtotal.cuti;
-        ws.getCell(`N${currentRow}`).value = subtotal.dinas;
-        ws.getCell(`O${currentRow}`).value = subtotal.total_hari;
-
-        ws.getCell(`P${currentRow}`).value = subtotal.tl1_5_izin;
-        ws.getCell(`Q${currentRow}`).value = subtotal.tl1_5_tanpa;
-        ws.getCell(`R${currentRow}`).value = subtotal.tl5_10_izin;
-        ws.getCell(`S${currentRow}`).value = subtotal.tl5_10_tanpa;
-        ws.getCell(`T${currentRow}`).value = subtotal.tl10_izin;
-        ws.getCell(`U${currentRow}`).value = subtotal.tl10_tanpa;
-        ws.getCell(`V${currentRow}`).value = subtotal.total_tl_izin;
-        ws.getCell(`W${currentRow}`).value = subtotal.total_tl_tanpa;
-        ws.getCell(`X${currentRow}`).value = subtotal.pa_izin;
-        ws.getCell(`Y${currentRow}`).value = subtotal.pa_tanpa;
-        ws.getCell(`Z${currentRow}`).value = subtotal.tidak_posting_datang;
-        ws.getCell(`AA${currentRow}`).value = subtotal.tidak_posting_pulang;
-
-        currentRow++;
-
-        // === 2 BARIS KOSONG ===
-        currentRow += 2;
       });
 
-
-
+      // Export buffer
       const buffer = await wb.xlsx.writeBuffer();
-      saveAs(new Blob([buffer]), `rekap_kehadiran_${monthNames[monthIdx]}_${year}.xlsx`);
+      // const fileName = monthKeys.length > 1 ? `rekap_kehadiran_multi_bulan.xlsx` : `rekap_kehadiran_${monthNames[monthIdx]}_${year}.xlsx`;
+      
+      let fileName = "rekap_kehadiran.xlsx";
+
+      if (startDate && endDate) {
+        fileName = `rekap_kehadiran_${formatDateFile(startDate)}_sd_${formatDateFile(endDate)}.xlsx`;
+      } else if (monthKeys.length === 1) {
+        const [year, month] = monthKeys[0].split("-");
+        fileName = `rekap_kehadiran_${MONTH_NAMES[parseInt(month) - 1]}_${year}.xlsx`;
+      } else {
+        fileName = "rekap_kehadiran_multi_bulan.xlsx";
+      }
+
+      saveAs(new Blob([buffer]), fileName);
       alert("Export Rekap Kehadiran selesai.");
     } catch (err) {
       console.error("Export failed:", err);
@@ -2775,10 +2717,6 @@ export default function Croscek() {
                           );
                         })())}
                       </td>
-
-
-
-
                     </tr>
                   ))}
 
@@ -2796,29 +2734,30 @@ export default function Croscek() {
             {/* EXPORT BUTTON DAN PAGINATION */}
             <div className="p-4 border-t flex justify-between items-center">
               {/* Grup tombol kiri */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={exportFilteredData}
-                  className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded flex items-center gap-1"
-                >
-                  <FileSpreadsheet size={16} /> Export to Excel
-                </button>
+                <div className="flex items-center gap-3 flex-wrap">
+                      <button
+                        onClick={exportFilteredData}
+                        className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-md hover:shadow-lg transition-all duration-200"
+                      >
+                        <FileSpreadsheet size={16} /> Export Excel
+                      </button>
 
-                <button
-                  onClick={exportRekapPerhari}
-                  className="px-4 py-2 bg-green-600 text-white rounded flex items-center gap-1"
-                >
-                  <FileSpreadsheet size={16} /> Rekap Perhari
-                </button>
-                <button
-                  onClick={exportRekapKehadiran}
-                  className="px-4 py-2 bg-green-600 text-white rounded flex items-center gap-1"
-                >
-                  <FileSpreadsheet size={16} /> Rekap Periode
-                </button>
-              </div>
+                      <button
+                        onClick={exportRekapPerhari}
+                        className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-md hover:shadow-lg transition-all duration-200"
+                      >
+                        <FileSpreadsheet size={16} /> Rekap Harian
+                      </button>
 
-              {/* Navigasi halaman */}
+                      <button
+                        onClick={exportRekapKehadiran}
+                        className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-md hover:shadow-lg transition-all duration-200"
+                      >
+                        <FileSpreadsheet size={16} /> Rekap Periode
+                      </button>
+                </div>
+
+                      {/* Navigasi halaman */}
               <div className="flex items-center gap-4">
                 <button
                   disabled={page === 1}

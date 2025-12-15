@@ -13,6 +13,12 @@ function getMonthKey(dateStr) {
     return map;
   }
 
+  function formatDateFile(dateStr) {
+    const d = new Date(dateStr);
+    return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
+  }
+
+
   async function exportRekapKehadiran() {
     try {
       function applyReasonMap(data, reasonMap) {
@@ -31,15 +37,34 @@ function getMonthKey(dateStr) {
 
           const isShiftOff = isEmptyTime(row.Jadwal_Masuk);
 
+          const STATUS_BEBAS_SCAN = [
+            "LIBUR",
+            "OFF",
+            "CUTI",
+            "CUTI TAHUNAN",
+            "CUTI ISTIMEWA",
+            "CUTI BERSAMA",
+            "DINAS LUAR",
+            "SAKIT",
+            "IZIN",
+            "ALPA"
+          ];
+
           const bebasScan =
-            isShiftOff ||
-            STATUS_TANPA_SCAN.includes(statusKehadiranFinal);
+            isShiftOff || STATUS_BEBAS_SCAN.includes(statusKehadiranFinal);
+
+          // 🔥 KUNCI UTAMA: hanya HADIR yang boleh dihitung tidak scan
+          const isHadir = statusKehadiranFinal === "HADIR";
 
           const tidakScanMasuk =
-            !bebasScan && isEmptyTime(row.Actual_Masuk);
+            isHadir &&
+            !bebasScan &&
+            isEmptyTime(row.Actual_Masuk);
 
           const tidakScanPulang =
-            !bebasScan && isEmptyTime(row.Actual_Pulang);
+            isHadir &&
+            !bebasScan &&
+            isEmptyTime(row.Actual_Pulang);
 
           return {
             ...row,
@@ -73,13 +98,19 @@ function getMonthKey(dateStr) {
       const dataByMonth = groupByMonth(appliedData);
       const monthKeys = Object.keys(dataByMonth).sort();
 
+      const MONTH_NAMES = [
+        "JANUARI", "FEBRUARI", "MARET", "APRIL",
+        "MEI", "JUNI", "JULI", "AGUSTUS",
+        "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"
+      ];
+
+
       monthKeys.forEach(monthKey => {
         const monthlyData = dataByMonth[monthKey];
         const [year, month] = monthKey.split('-');
         const monthIdx = parseInt(month, 10) - 1;
-        const monthNames = ["JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", "JULI", "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"];
-        const sheetName = `${monthNames[monthIdx]} ${year}`;
-        const periodText = `PERIODE : ${monthNames[monthIdx]} ${year}`;
+        const sheetName = `${MONTH_NAMES[monthIdx]} ${year}`;
+        const periodText = `PERIODE : ${MONTH_NAMES[monthIdx]} ${year}`;
 
         // Buat sheet per bulan
         const ws = wb.addWorksheet(sheetName);
@@ -486,7 +517,19 @@ function getMonthKey(dateStr) {
 
       // Export buffer
       const buffer = await wb.xlsx.writeBuffer();
-      const fileName = monthKeys.length > 1 ? `rekap_kehadiran_multi_bulan.xlsx` : `rekap_kehadiran_${monthNames[monthIdx]}_${year}.xlsx`;
+      // const fileName = monthKeys.length > 1 ? `rekap_kehadiran_multi_bulan.xlsx` : `rekap_kehadiran_${monthNames[monthIdx]}_${year}.xlsx`;
+      
+      let fileName = "rekap_kehadiran.xlsx";
+
+      if (startDate && endDate) {
+        fileName = `rekap_kehadiran_${formatDateFile(startDate)}_sd_${formatDateFile(endDate)}.xlsx`;
+      } else if (monthKeys.length === 1) {
+        const [year, month] = monthKeys[0].split("-");
+        fileName = `rekap_kehadiran_${MONTH_NAMES[parseInt(month) - 1]}_${year}.xlsx`;
+      } else {
+        fileName = "rekap_kehadiran_multi_bulan.xlsx";
+      }
+
       saveAs(new Blob([buffer]), fileName);
       alert("Export Rekap Kehadiran selesai.");
     } catch (err) {
