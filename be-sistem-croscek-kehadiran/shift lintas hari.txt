@@ -1,0 +1,17 @@
+1D1	Bandung	Shift 2 Security Corporate	19:00:00	7:00:00	Masuk Malam	Security Corporate
+1DS	Bandung	Shift 1-2 Security Corporate	7:00:00	7:00:00	Masuk Pagi	Security Corporate
+2A	Ciater	2A	16:00:00	0:00:00	Masuk Sore	ALL
+3	Ciater	Shift 3	23:00:00	7:00:00	Masuk Malam	ALL
+3A	Ciater	3A	0:00:00	8:00:00	Masuk Malam	ALL
+3B	Ciater	3B	22:00:00	6:00:00	Masuk Malam	ALL
+D1/2A	Ciater	Shift Double A1	8:00:00	0:00:00	Masuk 2 Shift	ALL
+D2/3	Ciater	Shift Double 2/3	15:00:00	7:00:00	Masuk 2 Shift	ALL	
+D2/3A	Ciater	Shift Double A2	16:00:00	8:00:00	Masuk 2 Shift	ALL
+LS2	Ciater	Long Shift 2	19:00:00	7:00:00	Masuk Malam	ALL
+
+
+EO	Ciater	Extraoff	0:00:00	0:00:00	Extraoff	ALL
+X	Bandung	Libur	0:00:00	0:00:00	Libur	ALL
+CT	ALL	Cuti Istimewa	0:00:00	0:00:00	Cuti Istimewa	ALL
+CTB	Bandung	Cuti Bersama	0:00:00	0:00:00	Cuti Bersama	Corporate
+CTT	ALL	Cuti Tahunan	0:00:00	0:00:00	Cuti Tahunan	ALL

@@ -1,0 +1,143 @@
+WITH Jadwal AS (
+    SELECT
+        jk.id_karyawan,
+        jk.nama,
+        jk.tanggal AS tanggal_shift,
+        jk.kode_shift,
+        jk.shift_window_start,
+        jk.shift_window_end,
+        si.jam_masuk,
+        si.jam_pulang,
+        k.nik,
+        k.jabatan,
+        k.dept
+    FROM jadwal_karyawan jk
+    JOIN karyawan k ON jk.id_karyawan = k.id_karyawan
+    LEFT JOIN shift_info si ON jk.kode_shift = si.kode
+),
+
+ScanInShift AS (
+    SELECT
+        j.*,
+        kh.tanggal_scan
+    FROM Jadwal j
+    LEFT JOIN kehadiran_karyawan kh
+        ON kh.id_karyawan = j.id_karyawan
+       AND j.kode_shift = '3A'
+       AND kh.tanggal_scan BETWEEN j.shift_window_start AND j.shift_window_end
+),
+
+AggNormal AS (
+    SELECT
+        id_karyawan,
+        nama,
+        tanggal_shift,
+        kode_shift,
+        nik,
+        jabatan,
+        dept,
+        jam_masuk,
+        jam_pulang,
+        MIN(tanggal_scan) AS actual_masuk,
+        MAX(tanggal_scan) AS actual_pulang
+    FROM ScanInShift
+    GROUP BY
+        id_karyawan, nama, tanggal_shift, kode_shift,
+        nik, jabatan, dept, jam_masuk, jam_pulang
+),
+
+-- Tandai awal rangkaian setelah libur
+FlagLibur AS (
+    SELECT
+        a.*,
+        CASE
+            WHEN kode_shift = '3A'
+             AND LAG(kode_shift) OVER (
+                 PARTITION BY id_karyawan
+                 ORDER BY tanggal_shift
+             ) = 'X'
+            THEN 1
+            ELSE 0
+        END AS start_after_libur
+    FROM AggNormal a
+),
+
+-- Hitung offset geser berantai
+OffsetCalc AS (
+    SELECT
+        *,
+        SUM(start_after_libur) OVER (
+            PARTITION BY id_karyawan
+            ORDER BY tanggal_shift
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS shift_group
+    FROM FlagLibur
+),
+
+-- Re-map scan ke tanggal yang benar
+FinalMap AS (
+    SELECT
+        a.*,
+
+        -- Ambil scan dari baris berikutnya sesuai offset
+        LEAD(actual_masuk, shift_group) OVER (
+            PARTITION BY id_karyawan
+            ORDER BY tanggal_shift
+        ) AS shifted_masuk,
+
+        LEAD(actual_pulang, shift_group) OVER (
+            PARTITION BY id_karyawan
+            ORDER BY tanggal_shift
+        ) AS shifted_pulang
+    FROM OffsetCalc a
+)
+
+SELECT
+    id_karyawan,
+    nama,
+    tanggal_shift,
+    kode_shift,
+    nik,
+    jabatan,
+    dept,
+    jam_masuk,
+    jam_pulang,
+
+    CASE
+        WHEN kode_shift = '3A'
+         AND start_after_libur = 1
+         AND TIME(shifted_masuk) < '06:00:00'
+        THEN shifted_masuk
+        ELSE actual_masuk
+    END AS actual_masuk,
+
+    CASE
+        WHEN kode_shift = '3A'
+         AND start_after_libur = 1
+         AND TIME(shifted_masuk) < '06:00:00'
+        THEN shifted_pulang
+        ELSE actual_pulang
+    END AS actual_pulang,
+
+    CASE
+        WHEN actual_masuk IS NULL AND actual_pulang IS NULL
+            THEN 'Tidak ada data'
+        WHEN actual_masuk IS NULL AND actual_pulang IS NOT NULL
+            THEN 'Tidak scan masuk'
+        WHEN TIME(
+            COALESCE(
+                CASE
+                    WHEN start_after_libur = 1 THEN shifted_masuk
+                    ELSE actual_masuk
+                END,
+                actual_masuk
+            )
+        ) > jam_masuk
+            THEN 'Telat'
+        ELSE 'Normal'
+    END AS status_masuk
+
+FROM FinalMap
+WHERE nama = 'CUCU SAEPULOH'
+  AND tanggal_shift >= '2025-12-01'
+ORDER BY tanggal_shift;

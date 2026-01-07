@@ -1,0 +1,101 @@
+WITH Jadwal AS (
+    SELECT
+        jk.id_karyawan,
+        jk.nama,
+        jk.tanggal AS tanggal_jadwal,
+        jk.kode_shift,
+        jk.shift_window_start,
+        jk.shift_window_end,
+        si.jam_masuk,
+        si.jam_pulang,
+        k.nik,
+        k.jabatan,
+        k.dept
+    FROM jadwal_karyawan jk
+    JOIN karyawan k ON jk.id_karyawan = k.id_karyawan
+    LEFT JOIN shift_info si ON jk.kode_shift = si.kode
+),
+
+ScanMapped AS (
+    SELECT
+        j.*,
+        kh.tanggal_scan,
+
+        /* ===============================
+           FLAG IN / OUT (SUDAH BENAR)
+        =============================== */
+        CASE
+            WHEN j.kode_shift = '3A'
+                 AND (
+                     TIME(kh.tanggal_scan) >= '18:00:00'
+                     OR TIME(kh.tanggal_scan) < '06:00:00'
+                 )
+            THEN 'IN'
+            WHEN j.kode_shift = '3A'
+                 AND TIME(kh.tanggal_scan) >= '06:00:00'
+            THEN 'OUT'
+            ELSE NULL
+        END AS scan_type,
+
+        /* ===============================
+           LOGICAL SHIFT DATE (FINAL FIX LINTAS BULAN)
+        =============================== */
+        CASE
+            /* IN malam → masuk ke HARI KERJA BESOK */
+            WHEN j.kode_shift = '3A'
+                 AND TIME(kh.tanggal_scan) >= '18:00:00'
+            THEN DATE_ADD(DATE(kh.tanggal_scan), INTERVAL 1 DAY)
+
+            /* IN dini hari → tetap hari itu */
+            WHEN j.kode_shift = '3A'
+                 AND TIME(kh.tanggal_scan) < '06:00:00'
+            THEN DATE(kh.tanggal_scan)
+
+            /* OUT pagi → kembali ke shift sebelumnya */
+            WHEN j.kode_shift = '3A'
+                 AND TIME(kh.tanggal_scan) >= '06:00:00'
+            THEN DATE_SUB(DATE(kh.tanggal_scan), INTERVAL 1 DAY)
+
+            ELSE DATE(kh.tanggal_scan)
+        END AS tanggal_shift
+
+
+    FROM Jadwal j
+    LEFT JOIN kehadiran_karyawan kh
+        ON kh.id_karyawan = j.id_karyawan
+       AND kh.tanggal_scan BETWEEN j.shift_window_start AND j.shift_window_end
+),
+
+ScanAgg AS (
+    SELECT
+        id_karyawan,
+        nama,
+        kode_shift,
+        tanggal_shift,
+        nik,
+        jabatan,
+        dept,
+        jam_masuk,
+        jam_pulang,
+
+        MIN(CASE WHEN scan_type = 'IN'  THEN tanggal_scan END) AS actual_masuk,
+        MAX(CASE WHEN scan_type = 'OUT' THEN tanggal_scan END) AS actual_pulang
+
+    FROM ScanMapped
+    GROUP BY
+        id_karyawan,
+        tanggal_shift,
+        kode_shift,
+        nama,
+        nik,
+        jabatan,
+        dept,
+        jam_masuk,
+        jam_pulang
+)
+
+SELECT *
+FROM ScanAgg
+WHERE nama = 'CUCU SAEPULOH'
+  AND tanggal_shift BETWEEN '2025-11-30' AND '2025-12-31'
+ORDER BY tanggal_shift;

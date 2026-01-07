@@ -1,0 +1,165 @@
+WITH Jadwal AS (
+    SELECT
+        jk.id_karyawan,
+        jk.nama,
+        jk.tanggal AS tanggal_shift,
+        jk.kode_shift,
+        jk.shift_window_start,
+        jk.shift_window_end,
+        si.jam_masuk,
+        si.jam_pulang,
+        k.nik,
+        k.jabatan,
+        k.dept
+    FROM jadwal_karyawan jk
+    JOIN karyawan k ON jk.id_karyawan = k.id_karyawan
+    LEFT JOIN shift_info si ON jk.kode_shift = si.kode
+),
+
+ScanInShift AS (
+    SELECT j.*, kh.tanggal_scan
+    FROM Jadwal j
+    LEFT JOIN kehadiran_karyawan kh
+        ON kh.id_karyawan = j.id_karyawan
+       AND j.kode_shift = '3A'
+       AND kh.tanggal_scan BETWEEN j.shift_window_start AND j.shift_window_end
+),
+
+AggNormal AS (
+    SELECT
+        id_karyawan, nama, tanggal_shift, kode_shift,
+        nik, jabatan, dept, jam_masuk, jam_pulang,
+        MIN(tanggal_scan) AS actual_masuk,
+        MAX(tanggal_scan) AS actual_pulang
+    FROM ScanInShift
+    GROUP BY id_karyawan, nama, tanggal_shift, kode_shift,
+        nik, jabatan, dept, jam_masuk, jam_pulang
+),
+
+WithWindow AS (
+    SELECT 
+        a.*,
+        LAG(a.kode_shift) OVER (PARTITION BY a.id_karyawan ORDER BY a.tanggal_shift) AS prev_shift,
+        LAG(a.actual_masuk) OVER (PARTITION BY a.id_karyawan ORDER BY a.tanggal_shift) AS prev_masuk,
+        LAG(a.kode_shift, 2) OVER (PARTITION BY a.id_karyawan ORDER BY a.tanggal_shift) AS prev2_shift,
+        LAG(a.actual_masuk, 2) OVER (PARTITION BY a.id_karyawan ORDER BY a.tanggal_shift) AS prev2_masuk,
+        LAG(a.kode_shift, 3) OVER (PARTITION BY a.id_karyawan ORDER BY a.tanggal_shift) AS prev3_shift,
+        LEAD(a.actual_masuk, 1) OVER (PARTITION BY a.id_karyawan ORDER BY a.tanggal_shift) AS next1_masuk,
+        LEAD(a.actual_pulang, 1) OVER (PARTITION BY a.id_karyawan ORDER BY a.tanggal_shift) AS next1_pulang,
+        LEAD(a.actual_masuk, 2) OVER (PARTITION BY a.id_karyawan ORDER BY a.tanggal_shift) AS next2_masuk,
+        LEAD(a.actual_pulang, 2) OVER (PARTITION BY a.id_karyawan ORDER BY a.tanggal_shift) AS next2_pulang,
+        LEAD(a.actual_masuk, 3) OVER (PARTITION BY a.id_karyawan ORDER BY a.tanggal_shift) AS next3_masuk,
+        LEAD(a.actual_pulang, 3) OVER (PARTITION BY a.id_karyawan ORDER BY a.tanggal_shift) AS next3_pulang,
+        LEAD(a.actual_masuk, 4) OVER (PARTITION BY a.id_karyawan ORDER BY a.tanggal_shift) AS next4_masuk,
+        LEAD(a.actual_pulang, 4) OVER (PARTITION BY a.id_karyawan ORDER BY a.tanggal_shift) AS next4_pulang
+    FROM AggNormal a
+),
+
+ScanToMove AS (
+    SELECT
+        w.*,
+        -- Baris 1 setelah libur yang kosong
+        CASE
+            WHEN kode_shift = '3A' AND actual_masuk IS NULL AND prev_shift = 'X'
+            THEN 1 ELSE 0
+        END AS is_empty_after_holiday,
+        
+        -- Baris 2 setelah libur (prev adalah empty_after_holiday)
+        CASE
+            WHEN prev_shift = '3A' AND prev_masuk IS NULL AND prev2_shift = 'X'
+                 AND actual_masuk IS NOT NULL AND TIME(actual_masuk) < '06:00:00'
+            THEN 1 ELSE 0
+        END AS is_row2_after_holiday,
+        
+        -- Baris 3 setelah libur
+        CASE
+            WHEN prev_shift = '3A' AND prev_masuk IS NULL
+                 AND prev2_shift = '3A' AND prev2_masuk IS NULL 
+                 AND prev3_shift = 'X'
+            THEN 1 ELSE 0
+        END AS is_row3_after_holiday
+    FROM WithWindow w
+),
+
+ShiftedData AS (
+    SELECT
+        id_karyawan, nama, tanggal_shift, kode_shift,
+        nik, jabatan, dept, jam_masuk, jam_pulang,
+        
+        CASE
+            -- Baris 1 setelah libur kosong: ambil dari next1 (harus TIME < 06:00)
+            WHEN is_empty_after_holiday = 1 AND next1_masuk IS NOT NULL AND TIME(next1_masuk) < '06:00:00'
+            THEN next1_masuk
+            
+            -- Baris 2 setelah libur: data diambil baris 1, ambil dari next1 (TANPA cek TIME)
+            WHEN is_row2_after_holiday = 1 AND next1_masuk IS NOT NULL
+            THEN next1_masuk
+            
+            -- Baris 3 setelah libur: data diambil baris 2, ambil dari next1
+            WHEN is_row3_after_holiday = 1 AND next1_masuk IS NOT NULL
+            THEN next1_masuk
+            
+            -- Jika masih kosong dan prev adalah row2 atau row3, coba next2
+            WHEN is_row2_after_holiday = 1 AND next1_masuk IS NULL AND next2_masuk IS NOT NULL
+            THEN next2_masuk
+            
+            WHEN is_row3_after_holiday = 1 AND next1_masuk IS NULL AND next2_masuk IS NOT NULL
+            THEN next2_masuk
+            
+            -- Jika masih kosong, coba next3
+            WHEN is_row2_after_holiday = 1 AND next1_masuk IS NULL AND next2_masuk IS NULL AND next3_masuk IS NOT NULL
+            THEN next3_masuk
+            
+            WHEN is_row3_after_holiday = 1 AND next1_masuk IS NULL AND next2_masuk IS NULL AND next3_masuk IS NOT NULL
+            THEN next3_masuk
+            
+            -- Default: gunakan data asli
+            ELSE actual_masuk
+        END AS actual_masuk_final,
+        
+        CASE
+            WHEN is_empty_after_holiday = 1 AND next1_masuk IS NOT NULL AND TIME(next1_masuk) < '06:00:00'
+            THEN next1_pulang
+            
+            WHEN is_row2_after_holiday = 1 AND next1_pulang IS NOT NULL
+            THEN next1_pulang
+            
+            WHEN is_row3_after_holiday = 1 AND next1_pulang IS NOT NULL
+            THEN next1_pulang
+            
+            WHEN is_row2_after_holiday = 1 AND next1_pulang IS NULL AND next2_pulang IS NOT NULL
+            THEN next2_pulang
+            
+            WHEN is_row3_after_holiday = 1 AND next1_pulang IS NULL AND next2_pulang IS NOT NULL
+            THEN next2_pulang
+            
+            WHEN is_row2_after_holiday = 1 AND next1_pulang IS NULL AND next2_pulang IS NULL AND next3_pulang IS NOT NULL
+            THEN next3_pulang
+            
+            WHEN is_row3_after_holiday = 1 AND next1_pulang IS NULL AND next2_pulang IS NULL AND next3_pulang IS NOT NULL
+            THEN next3_pulang
+            
+            ELSE actual_pulang
+        END AS actual_pulang_final
+    FROM ScanToMove
+)
+
+SELECT
+    id_karyawan, nama, tanggal_shift, kode_shift,
+    nik, jabatan, dept, jam_masuk, jam_pulang,
+    actual_masuk_final AS actual_masuk,
+    actual_pulang_final AS actual_pulang,
+    
+    CASE
+        WHEN actual_masuk_final IS NULL AND actual_pulang_final IS NULL 
+            THEN 'Tidak ada data'
+        WHEN actual_masuk_final IS NULL AND actual_pulang_final IS NOT NULL 
+            THEN 'Tidak scan masuk'
+        WHEN TIME(actual_masuk_final) > jam_masuk 
+            THEN 'Telat'
+        ELSE 'Normal'
+    END AS status_masuk
+    
+FROM ShiftedData
+WHERE nama = 'CUCU SAEPULOH' AND tanggal_shift >= '2025-12-01'
+ORDER BY tanggal_shift;

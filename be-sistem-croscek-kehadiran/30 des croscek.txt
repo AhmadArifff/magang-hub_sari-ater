@@ -1,0 +1,289 @@
+-- =====================================================
+-- SHIFT 3A ATTENDANCE - OPTIMIZED WITH LATE ARRIVAL FALLBACK
+-- Handles: Normal attendance + Late arrival (next day dawn scan)
+-- =====================================================
+
+SELECT                 
+    base.Nama,                 
+    base.Tanggal,                 
+    base.Kode_Shift,                 
+    base.Jabatan,                 
+    base.Departemen,                 
+    base.id_karyawan,                 
+    base.NIK,                 
+    base.Jadwal_Masuk,                 
+    base.Jadwal_Pulang,                 
+    base.Actual_Masuk,                 
+    base.Actual_Pulang,
+    base.is_late_arrival,
+    base.debug_all_scans,
+    
+    -- STATUS KEHADIRAN
+    CASE                     
+        WHEN base.Kode_Shift IN ('CT','CTT','EO','OF1','CTB','X')
+            THEN ij.keterangan                     
+        WHEN base.Actual_Masuk IS NULL AND base.Actual_Pulang IS NULL
+            THEN 'Tidak Hadir'                     
+        ELSE 'Hadir'                 
+    END AS Status_Kehadiran,
+    
+    -- STATUS MASUK
+    CASE                     
+        WHEN base.Actual_Masuk IS NULL
+            THEN 'Tidak scan masuk'
+            
+        -- SHIFT 3A: Check if late arrival
+        WHEN base.Kode_Shift = '3A' AND base.is_late_arrival = 1 THEN
+            CASE
+                -- Scan 00:00 - 00:10 = Telat tapi masih OK
+                WHEN TIME(base.Actual_Masuk) <= '00:10:00'
+                    THEN 'Telat 1-5 Menit'
+                -- Scan 00:10:01 - 00:15:00
+                WHEN TIME(base.Actual_Masuk) BETWEEN '00:10:01' AND '00:15:00'
+                    THEN 'Telat 5-10 Menit'
+                -- Scan > 00:15:00
+                ELSE 'Telat >= 10 Menit'
+            END
+            
+        -- SHIFT 3A: Normal on-time check-in
+        WHEN base.Kode_Shift = '3A' THEN
+            CASE
+                -- Night scan (H-1) or very early dawn (H) = on time
+                WHEN (DATE(base.Actual_Masuk) = DATE_SUB(base.Tanggal, INTERVAL 1 DAY) 
+                      AND TIME(base.Actual_Masuk) >= '20:00:00')
+                    OR (DATE(base.Actual_Masuk) = base.Tanggal 
+                        AND TIME(base.Actual_Masuk) <= '00:10:00')
+                    THEN 'Masuk Tepat Waktu'
+                -- Dawn scan 00:10:01 onwards = late
+                WHEN TIME(base.Actual_Masuk) BETWEEN '00:10:01' AND '00:15:00'
+                    THEN 'Telat 1-5 Menit'
+                WHEN TIME(base.Actual_Masuk) BETWEEN '00:15:01' AND '00:20:00'
+                    THEN 'Telat 5-10 Menit'
+                ELSE 'Telat >= 10 Menit'
+            END
+            
+        -- OTHER SHIFTS
+        WHEN base.Actual_Masuk >= base.Scheduled_Start
+            THEN 'Masuk Telat'                     
+        ELSE 'Masuk Tepat Waktu'                 
+    END AS Status_Masuk,
+    
+    -- STATUS PULANG
+    CASE                     
+        WHEN base.Actual_Pulang IS NULL                          
+            THEN 'Tidak scan pulang'
+        WHEN base.Kode_Shift = '3A' AND TIME(base.Actual_Pulang) < '07:50:00'
+            THEN 'Pulang Terlalu Cepat'
+        WHEN base.Kode_Shift = '3A'
+            THEN 'Pulang Tepat Waktu'
+        WHEN base.Actual_Pulang <= base.Scheduled_End
+            THEN 'Pulang Terlalu Cepat'                     
+        ELSE 'Pulang Tepat Waktu'                 
+    END AS Status_Pulang
+    
+FROM (
+    SELECT                     
+        jk.nama AS Nama,                     
+        jk.tanggal AS Tanggal,                     
+        jk.kode_shift AS Kode_Shift,                     
+        si.jam_masuk AS Jadwal_Masuk,                     
+        si.jam_pulang AS Jadwal_Pulang,                     
+        si.lintas_hari,                     
+        k.jabatan AS Jabatan,                     
+        k.dept AS Departemen,                     
+        k.id_karyawan,                     
+        k.nik AS NIK,
+        
+        CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 23:00:00') AS DATETIME) AS Scheduled_Start,
+        CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) AS Scheduled_End,
+        
+        -- =====================================================
+        -- CHECK-IN DETECTION
+        -- =====================================================
+        CASE
+            WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') 
+                THEN NULL
+            
+            WHEN jk.kode_shift = '3A' AND si.lintas_hari = 1 THEN
+                COALESCE(
+                    -- PRIORITY 1: Normal check-in (H-1 night OR H early dawn)
+                    (
+                        SELECT k.tanggal_scan
+                        FROM kehadiran_karyawan k
+                        WHERE k.nama = jk.nama
+                        AND k.tanggal_scan BETWEEN 
+                            CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 20:00:00') AS DATETIME)
+                            AND
+                            CAST(CONCAT(jk.tanggal, ' 05:59:59') AS DATETIME)
+                        AND NOT (TIME(k.tanggal_scan) BETWEEN '06:00:00' AND '11:00:00')
+                        ORDER BY k.tanggal_scan ASC
+                        LIMIT 1
+                    ),
+                    -- PRIORITY 2: Late arrival fallback (H+1 dawn scan)
+                    -- Use H+1 dawn ONLY if H+1 has its own night scan (proving H+1 is covered)
+                    (
+                        SELECT k_fallback.tanggal_scan
+                        FROM kehadiran_karyawan k_fallback
+                        WHERE k_fallback.nama = jk.nama
+                        AND k_fallback.tanggal_scan BETWEEN
+                            CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 00:00:00') AS DATETIME)
+                            AND
+                            CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 05:59:59') AS DATETIME)
+                        -- CRITICAL FIX: Check if H+1 has night scan ON H+1 DATE (not H date!)
+                        AND EXISTS (
+                            SELECT 1 FROM kehadiran_karyawan k_h1_night
+                            WHERE k_h1_night.nama = jk.nama
+                            -- Night scan should be on H+1 date 20:00-23:59
+                            AND k_h1_night.tanggal_scan BETWEEN
+                                CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 20:00:00') AS DATETIME)
+                                AND
+                                CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 23:59:59') AS DATETIME)
+                        )
+                        ORDER BY k_fallback.tanggal_scan ASC
+                        LIMIT 1
+                    )
+                )
+            
+            ELSE (
+                SELECT MIN(k3.tanggal_scan)                             
+                FROM kehadiran_karyawan k3                             
+                WHERE k3.nama = jk.nama                             
+                AND k3.tanggal_scan BETWEEN                             
+                    CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                    AND
+                    CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+            )
+        END AS Actual_Masuk,
+        
+        -- =====================================================
+        -- CHECK-OUT DETECTION
+        -- =====================================================
+        CASE
+            WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') 
+                THEN NULL
+            
+            WHEN jk.kode_shift = '3A' AND si.lintas_hari = 1 THEN
+                COALESCE(
+                    -- PRIORITY 1: Normal checkout (H morning)
+                    (
+                        SELECT k.tanggal_scan
+                        FROM kehadiran_karyawan k
+                        WHERE k.nama = jk.nama
+                        AND k.tanggal_scan BETWEEN
+                            CAST(CONCAT(jk.tanggal, ' 06:00:00') AS DATETIME)
+                            AND
+                            CAST(CONCAT(jk.tanggal, ' 11:00:00') AS DATETIME)
+                        ORDER BY k.tanggal_scan ASC
+                        LIMIT 1
+                    ),
+                    -- PRIORITY 2: Late arrival checkout (H+1 morning)
+                    -- Only if check-in used H+1 dawn scan (meaning this is late arrival case)
+                    (
+                        SELECT k_co_fallback.tanggal_scan
+                        FROM kehadiran_karyawan k_co_fallback
+                        WHERE k_co_fallback.nama = jk.nama
+                        AND k_co_fallback.tanggal_scan BETWEEN
+                            CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 06:00:00') AS DATETIME)
+                            AND
+                            CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 11:00:00') AS DATETIME)
+                        -- Only use if check-in was from H+1 (no normal check-in exists)
+                        AND NOT EXISTS (
+                            SELECT 1 FROM kehadiran_karyawan k_normal
+                            WHERE k_normal.nama = jk.nama
+                            AND k_normal.tanggal_scan BETWEEN
+                                CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 20:00:00') AS DATETIME)
+                                AND
+                                CAST(CONCAT(jk.tanggal, ' 05:59:59') AS DATETIME)
+                            AND NOT (TIME(k_normal.tanggal_scan) BETWEEN '06:00:00' AND '11:00:00')
+                        )
+                        -- And H+1 must have its own night scan (same fix as check-in)
+                        AND EXISTS (
+                            SELECT 1 FROM kehadiran_karyawan k_h1_night
+                            WHERE k_h1_night.nama = jk.nama
+                            -- Night scan on H+1 DATE 20:00-23:59
+                            AND k_h1_night.tanggal_scan BETWEEN
+                                CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 20:00:00') AS DATETIME)
+                                AND
+                                CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 23:59:59') AS DATETIME)
+                        )
+                        ORDER BY k_co_fallback.tanggal_scan ASC
+                        LIMIT 1
+                    )
+                )
+            
+            WHEN jk.kode_shift = '3B' THEN (
+                SELECT MAX(k.tanggal_scan)                             
+                FROM kehadiran_karyawan k                             
+                WHERE k.nama = jk.nama                             
+                AND k.tanggal_scan BETWEEN
+                    CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 05:00:00') AS DATETIME)
+                    AND
+                    CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 10:00:00') AS DATETIME)
+            )
+            
+            ELSE (
+                SELECT MAX(k4.tanggal_scan)                             
+                FROM kehadiran_karyawan k4                             
+                WHERE k4.nama = jk.nama                             
+                AND k4.tanggal_scan BETWEEN
+                    CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                    AND
+                    CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) + INTERVAL 6 HOUR
+            )
+        END AS Actual_Pulang,
+        
+        -- FLAG: Is this a late arrival (using H+1 dawn scan)?
+        CASE
+            WHEN jk.kode_shift = '3A' 
+                AND NOT EXISTS (
+                    SELECT 1 FROM kehadiran_karyawan k_normal
+                    WHERE k_normal.nama = jk.nama
+                    AND k_normal.tanggal_scan BETWEEN
+                        CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 20:00:00') AS DATETIME)
+                        AND
+                        CAST(CONCAT(jk.tanggal, ' 05:59:59') AS DATETIME)
+                    AND NOT (TIME(k_normal.tanggal_scan) BETWEEN '06:00:00' AND '11:00:00')
+                )
+                AND EXISTS (
+                    SELECT 1 FROM kehadiran_karyawan k_late
+                    WHERE k_late.nama = jk.nama
+                    AND k_late.tanggal_scan BETWEEN
+                        CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 00:00:00') AS DATETIME)
+                        AND
+                        CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 05:59:59') AS DATETIME)
+                )
+                THEN 1
+            ELSE 0
+        END AS is_late_arrival,
+        
+        -- DEBUG: Show all relevant scans
+        (
+            SELECT GROUP_CONCAT(
+                CONCAT(
+                    DATE_FORMAT(tanggal_scan, '%m-%d %H:%i:%s'),
+                    CASE 
+                        WHEN TIME(tanggal_scan) BETWEEN '20:00:00' AND '23:59:59' THEN '(N)'
+                        WHEN TIME(tanggal_scan) BETWEEN '00:00:00' AND '05:59:59' THEN '(D)'
+                        WHEN TIME(tanggal_scan) BETWEEN '06:00:00' AND '11:00:00' THEN '(M)'
+                        ELSE '(?)'
+                    END
+                )
+                ORDER BY tanggal_scan
+                SEPARATOR ' | '
+            )
+            FROM kehadiran_karyawan k
+            WHERE k.nama = jk.nama
+            AND k.tanggal_scan BETWEEN 
+                CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 20:00:00') AS DATETIME)
+                AND
+                CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 11:00:00') AS DATETIME)
+        ) AS debug_all_scans
+        
+    FROM jadwal_karyawan jk                 
+    LEFT JOIN shift_info si ON jk.kode_shift = si.kode                 
+    LEFT JOIN karyawan k ON jk.id_karyawan = k.id_karyawan
+    WHERE jk.nama = 'CUCU SAEPULOH'
+    AND jk.tanggal BETWEEN '2025-11-30' AND '2025-12-14'
+) AS base             
+LEFT JOIN informasi_jadwal ij ON ij.kode = base.Kode_Shift             
+ORDER BY base.Tanggal;

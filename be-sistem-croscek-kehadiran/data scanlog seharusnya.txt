@@ -1,0 +1,11 @@
+30-11-2025 08:55:21 -> cek out tanggal 30 nov 
+30-11-2025 23:57:00 -> cek in tanggal  1 des
+01-12-2025 08:22:41 -> cek out tanggal 1 des 
+01-12-2025 23:59:04 -> cek in tanggal   2 des
+02-12-2025 08:22:21 -> cek out tanggal 2 des 
+02-12-2025 23:56:32 -> cek in tanggal  3 des
+03-12-2025 08:09:19 -> cek out tanggal 3 des 
+06-12-2025 00:02:09 -> cek in tanggal  5 des (Karna telat masuk dari jawal 3A) 
+06-12-2025 08:44:20 -> cek out tanggal 5 des 
+06-12-2025 23:56:49 -> cek in tanggal  6 des 
+07-12-2025 09:14:06 -> cek out tanggal 6 des  

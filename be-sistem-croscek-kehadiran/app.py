@@ -30,34 +30,117 @@ def db():
         database="croscek_absen"
     )
 
+from datetime import time
+# ============================
+# DETEKSI LINTAS HARI (AMAN)
+# ============================
+# def detect_lintas_hari(jam_masuk, jam_pulang):
+#     if not jam_masuk or not jam_pulang:
+#         return 0
+
+#     # Normalisasi TIME (anti MySQL driver aneh)
+#     if not isinstance(jam_masuk, time):
+#         jam_masuk = time.fromisoformat(str(jam_masuk))
+
+#     if not isinstance(jam_pulang, time):
+#         jam_pulang = time.fromisoformat(str(jam_pulang))
+
+#     # Pulang <= Masuk → lintas hari (termasuk 24 jam)
+#     return 1 if jam_pulang <= jam_masuk else 0
+from datetime import time
+# yang tidak terbaca untuk kode 3a dari 00:00 - 08:00
+# def detect_lintas_hari(jam_masuk, jam_pulang):
+#     if jam_masuk is None or jam_pulang is None:
+#         return 0
+#     return 1 if jam_pulang <= jam_masuk else 0
+
+def detect_lintas_hari(kode, jam_masuk, jam_pulang):
+    if jam_masuk is None or jam_pulang is None:
+        return 0
+
+    # RULE KHUSUS SHIFT MALAM
+    if kode.upper() == '3A':
+        return 1
+
+    # RULE UMUM
+    return 1 if jam_pulang <= jam_masuk else 0
+
+
+
+
 # ============================================================
 # AUTO-SYNC SHIFT_INFO SETIAP ADA PERUBAHAN informasi_jadwal
 # ============================================================
+# tidak jalan
+# def sync_shift_info():
+#     try:
+#         conn = db()
+#         cur = conn.cursor(dictionary=True)
+
+#         cur.execute("""
+#             SELECT kode, jam_masuk, jam_pulang
+#             FROM informasi_jadwal
+#             WHERE jam_masuk IS NOT NULL
+#               AND jam_pulang IS NOT NULL
+#         """)
+#         rows = cur.fetchall()
+
+#         SHIFT_LIBUR = ("CT", "CTT", "CTB", "EO", "OF1", "X")
+
+#         synced = 0
+
+#         for r in rows:
+#             kode = r["kode"]
+#             jm = r["jam_masuk"]
+#             jp = r["jam_pulang"]
+
+#             # Shift libur → TIDAK lintas hari
+#             if kode in SHIFT_LIBUR:
+#                 lintas = 0
+#             else:
+#                 lintas = detect_lintas_hari(jm, jp)
+
+#             cur.execute("""
+#                 INSERT INTO shift_info (kode, jam_masuk, jam_pulang, lintas_hari)
+#                 VALUES (%s, %s, %s, %s)
+#                 ON DUPLICATE KEY UPDATE
+#                     jam_masuk = VALUES(jam_masuk),
+#                     jam_pulang = VALUES(jam_pulang),
+#                     lintas_hari = VALUES(lintas_hari)
+#             """, (kode, jm, jp, lintas))
+
+#             synced += 1
+
+#         conn.commit()
+#         cur.close()
+#         conn.close()
+
+#         print(f"[SYNC shift_info] selesai & valid ({synced} shift)")
+
+#     except Exception as e:
+#         print("[SHIFT SYNC ERROR]:", e)
 
 def sync_shift_info():
     try:
         conn = db()
         cur = conn.cursor(dictionary=True)
 
-        # Ambil semua shift dari informasi_jadwal
         cur.execute("""
             SELECT kode, jam_masuk, jam_pulang
             FROM informasi_jadwal
-            WHERE jam_masuk IS NOT NULL AND jam_pulang IS NOT NULL
+            WHERE jam_masuk IS NOT NULL
+              AND jam_pulang IS NOT NULL
         """)
         rows = cur.fetchall()
-
-        synced = 0
 
         for r in rows:
             kode = r["kode"]
             jm = r["jam_masuk"]
             jp = r["jam_pulang"]
 
-            # Deteksi lintas hari otomatis
-            lintas = 1 if str(jp) < str(jm) else 0
+            # lintas = detect_lintas_hari(jm, jp)
+            lintas = lintas = detect_lintas_hari(kode, jm, jp)
 
-            # Insert atau update shift_info
             cur.execute("""
                 INSERT INTO shift_info (kode, jam_masuk, jam_pulang, lintas_hari)
                 VALUES (%s, %s, %s, %s)
@@ -67,17 +150,106 @@ def sync_shift_info():
                     lintas_hari = VALUES(lintas_hari)
             """, (kode, jm, jp, lintas))
 
-            synced += 1
-
         conn.commit()
         cur.close()
         conn.close()
 
-        print(f"[SYNC shift_info] {synced} shift diperbarui")
+        print("[SYNC shift_info] selesai & valid")
 
     except Exception as e:
         print("[SHIFT SYNC ERROR]:", e)
+
+
+# jalan dedahult
+# def sync_shift_info():
+#     try:
+#         conn = db()
+#         cur = conn.cursor(dictionary=True)
+
+#         # Ambil semua shift dari informasi_jadwal
+#         cur.execute("""
+#             SELECT kode, jam_masuk, jam_pulang
+#             FROM informasi_jadwal
+#             WHERE jam_masuk IS NOT NULL AND jam_pulang IS NOT NULL
+#         """)
+#         rows = cur.fetchall()
+
+#         synced = 0
+
+#         for r in rows:
+#             kode = r["kode"]
+#             jm = r["jam_masuk"]
+#             jp = r["jam_pulang"]
+
+#             # Deteksi lintas hari otomatis
+#             lintas = 1 if str(jp) < str(jm) else 0
+
+#             # Insert atau update shift_info
+#             cur.execute("""
+#                 INSERT INTO shift_info (kode, jam_masuk, jam_pulang, lintas_hari)
+#                 VALUES (%s, %s, %s, %s)
+#                 ON DUPLICATE KEY UPDATE
+#                     jam_masuk = VALUES(jam_masuk),
+#                     jam_pulang = VALUES(jam_pulang),
+#                     lintas_hari = VALUES(lintas_hari)
+#             """, (kode, jm, jp, lintas))
+
+#             synced += 1
+
+#         conn.commit()
+#         cur.close()
+#         conn.close()
+
+#         print(f"[SYNC shift_info] {synced} shift diperbarui")
+
+#     except Exception as e:
+#         print("[SHIFT SYNC ERROR]:", e)
         
+# tidak jalan
+# def sync_single_shift(kode):
+#     """Sinkronisasi satu shift berdasarkan kode tertentu (VERSI VALID)"""
+#     try:
+#         conn = db()
+#         cur = conn.cursor(dictionary=True)
+
+#         cur.execute("""
+#             SELECT kode, jam_masuk, jam_pulang
+#             FROM informasi_jadwal
+#             WHERE kode = %s
+#         """, (kode,))
+#         r = cur.fetchone()
+
+#         if not r:
+#             return
+
+#         jm = r["jam_masuk"]
+#         jp = r["jam_pulang"]
+
+#         SHIFT_LIBUR = ("CT", "CTT", "CTB", "EO", "OF1", "X")
+
+#         # Shift libur → tidak lintas hari
+#         if kode in SHIFT_LIBUR:
+#             lintas = 0
+#         else:
+#             lintas = detect_lintas_hari(jm, jp)
+
+#         cur.execute("""
+#             INSERT INTO shift_info (kode, jam_masuk, jam_pulang, lintas_hari)
+#             VALUES (%s, %s, %s, %s)
+#             ON DUPLICATE KEY UPDATE
+#                 jam_masuk = VALUES(jam_masuk),
+#                 jam_pulang = VALUES(jam_pulang),
+#                 lintas_hari = VALUES(lintas_hari)
+#         """, (kode, jm, jp, lintas))
+
+#         conn.commit()
+#         cur.close()
+#         conn.close()
+
+#         print(f"[SYNC SINGLE] Shift {kode} valid & diperbarui")
+
+#     except Exception as e:
+#         print("[SYNC SINGLE SHIFT ERROR]:", e)
 
 def sync_single_shift(kode):
     """Sinkronisasi satu shift berdasarkan kode tertentu"""
@@ -85,7 +257,6 @@ def sync_single_shift(kode):
         conn = db()
         cur = conn.cursor(dictionary=True)
 
-        # Ambil 1 shift saja
         cur.execute("""
             SELECT kode, jam_masuk, jam_pulang
             FROM informasi_jadwal
@@ -94,15 +265,14 @@ def sync_single_shift(kode):
         r = cur.fetchone()
 
         if not r:
-            return  # Tidak ada datanya
+            return
 
         jm = r["jam_masuk"]
         jp = r["jam_pulang"]
 
-        # Deteksi lintas hari
-        lintas = 1 if str(jp) < str(jm) else 0
+        # lintas = detect_lintas_hari(jm, jp)
+        lintas = detect_lintas_hari(kode, jm, jp)
 
-        # Insert/update shift_info
         cur.execute("""
             INSERT INTO shift_info (kode, jam_masuk, jam_pulang, lintas_hari)
             VALUES (%s, %s, %s, %s)
@@ -116,10 +286,54 @@ def sync_single_shift(kode):
         cur.close()
         conn.close()
 
-        print(f"[SYNC] Shift {kode} diperbarui")
+        print(f"[SYNC SINGLE] Shift {kode} valid")
 
     except Exception as e:
         print("[SYNC SINGLE SHIFT ERROR]:", e)
+
+
+# jalan dedahult
+# def sync_single_shift(kode):
+#     """Sinkronisasi satu shift berdasarkan kode tertentu"""
+#     try:
+#         conn = db()
+#         cur = conn.cursor(dictionary=True)
+
+#         # Ambil 1 shift saja
+#         cur.execute("""
+#             SELECT kode, jam_masuk, jam_pulang
+#             FROM informasi_jadwal
+#             WHERE kode = %s
+#         """, (kode,))
+#         r = cur.fetchone()
+
+#         if not r:
+#             return  # Tidak ada datanya
+
+#         jm = r["jam_masuk"]
+#         jp = r["jam_pulang"]
+
+#         # Deteksi lintas hari
+#         lintas = 1 if str(jp) < str(jm) else 0
+
+#         # Insert/update shift_info
+#         cur.execute("""
+#             INSERT INTO shift_info (kode, jam_masuk, jam_pulang, lintas_hari)
+#             VALUES (%s, %s, %s, %s)
+#             ON DUPLICATE KEY UPDATE
+#                 jam_masuk = VALUES(jam_masuk),
+#                 jam_pulang = VALUES(jam_pulang),
+#                 lintas_hari = VALUES(lintas_hari)
+#         """, (kode, jm, jp, lintas))
+
+#         conn.commit()
+#         cur.close()
+#         conn.close()
+
+#         print(f"[SYNC] Shift {kode} diperbarui")
+
+#     except Exception as e:
+#         print("[SYNC SINGLE SHIFT ERROR]:", e)
 
 
 def delete_single_shift(kode):
@@ -196,8 +410,8 @@ def create_jadwal():
             data.get("status", "non-active"),
             data.get("kontrol", "")
         ))
-        sync_single_shift(data.get("kode"))
         conn.commit()
+        sync_single_shift(data.get("kode"))
         cursor.close()
         conn.close()
         return jsonify({"message": "Data berhasil ditambahkan"}), 201
@@ -275,9 +489,9 @@ def update_jadwal(kode):
             kontrol,
             kode
         ))
-        sync_single_shift(kode)
-        get_jadwal()
         conn.commit()
+        get_jadwal()
+        sync_single_shift(kode)
         cursor.close()
         conn.close()
         return jsonify({"message": "Data berhasil diupdate"})
@@ -294,9 +508,9 @@ def delete_jadwal(kode):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM informasi_jadwal WHERE kode=%s", (kode,))
-        delete_single_shift(kode)
         get_jadwal()
         conn.commit()
+        delete_single_shift(kode)
         cursor.close()
         conn.close()
         return jsonify({"message": "Data berhasil dihapus"})
@@ -402,8 +616,8 @@ def upload_excel():
         # =========================
         # COMMIT DAN TUTUP KONEKSI
         # =========================
-        sync_shift_info()
         conn.commit()
+        sync_shift_info()
         cursor.close()
         conn.close()
 
@@ -700,6 +914,8 @@ def init_tables():
             nama VARCHAR(100),
             tanggal DATE,
             kode_shift VARCHAR(20),
+            shift_window_start DATETIME,
+            shift_window_end DATETIME,
 
             CONSTRAINT fk_jadwal_kode
                 FOREIGN KEY (kode_shift) REFERENCES informasi_jadwal(kode)
@@ -746,6 +962,30 @@ def init_tables():
                 ON UPDATE CASCADE
         )
     """)
+    
+    # ============================================
+    # 4.1. TABEL Croscek (Hasil Proses Croscek)
+    # ============================================
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS croscek (
+            id_croscek INT AUTO_INCREMENT PRIMARY KEY,
+            Nama VARCHAR(150) NOT NULL,
+            Tanggal DATE NOT NULL,
+            Kode_Shift VARCHAR(10),
+            Jabatan VARCHAR(100),
+            Departemen VARCHAR(100),
+            id_karyawan INT NOT NULL,
+            NIK VARCHAR(50) NOT NULL,
+            Jadwal_Masuk TIME,
+            Jadwal_Pulang TIME,
+            Actual_Masuk DATETIME NULL,
+            Actual_Pulang DATETIME NULL,
+            Status_Kehadiran VARCHAR(50),
+            Status_Masuk VARCHAR(50),
+            Status_Pulang VARCHAR(50)
+            # UNIQUE KEY uniq_karyawan_tanggal (id_karyawan, Tanggal)
+        )
+    """)
 
 
     # ============================================
@@ -786,6 +1026,14 @@ def init_tables():
     except:
         pass
 
+    try:
+        cur.execute("""
+            ALTER TABLE croscek
+                ADD UNIQUE KEY uq_croscek (id_karyawan, Tanggal, Kode_Shift);
+        """)
+    except:
+        pass
+    
     conn.commit()
     cur.close()
     conn.close()
@@ -794,44 +1042,150 @@ def init_tables():
 init_tables()
 
 
+# # ============================================================
+# # HELPERS
+# # ============================================================
+# from calendar import monthrange
+# from datetime import datetime
+
+# def parse_month_year(month_year_str):
+#     """
+#     Convert “Desember 2025” → (2025, 12)
+#     Handles Indonesian month names and uses year from file.
+#     """
+#     # Mapping Indonesian month names to numbers
+#     bulan_indonesia = {
+#         "Januari": 1, "Februari": 2, "Maret": 3, "April": 4, "Mei": 5, "Juni": 6,
+#         "Juli": 7, "Agustus": 8, "September": 9, "Oktober": 10, "November": 11, "Desember": 12
+#     }
+    
+#     # Strip whitespace and normalize
+#     month_year_str = month_year_str.strip()
+#     print(f"Raw month_year_str: '{repr(month_year_str)}'")  # Debug: lihat karakter tersembunyi
+    
+#     # Split the string (assuming format "Bulan Tahun")
+#     parts = month_year_str.split()
+#     if len(parts) != 2:
+#         raise ValueError(f"Invalid month_year format: {month_year_str}")
+    
+#     bulan_str, tahun_str = parts
+#     bulan_str = bulan_str.capitalize()  # Normalize case (misalnya, "desember" -> "Desember")
+#     if bulan_str not in bulan_indonesia:
+#         raise ValueError(f"Unknown month: {bulan_str}")
+    
+#     month = bulan_indonesia[bulan_str]
+#     try:
+#         year = int(tahun_str)
+#     except ValueError:
+#         raise ValueError(f"Invalid year: {tahun_str}")
+    
+#     return year, month
+
 # ============================================================
 # HELPERS
 # ============================================================
 from calendar import monthrange
 from datetime import datetime
+import re
 
-def parse_month_year(month_year_str):
+
+def parse_month_year(raw_value):
     """
-    Convert “Desember 2025” → (2025, 12)
-    Handles Indonesian month names and uses year from file.
+    Parse bulan dan tahun dari berbagai format input.
+    
+    Supported formats:
+    - 'November 2025'
+    - '11/11/2025' (ambil bulan dan tahun, abaikan tanggal)
+    - '2025-11-01' atau '2025-11-01 00:00:00'
+    - pandas.Timestamp object
+    
+    Returns:
+        tuple: (year, month) as integers
+    
+    Raises:
+        ValueError: jika format tidak dikenali
     """
-    # Mapping Indonesian month names to numbers
-    bulan_indonesia = {
-        "Januari": 1, "Februari": 2, "Maret": 3, "April": 4, "Mei": 5, "Juni": 6,
-        "Juli": 7, "Agustus": 8, "September": 9, "Oktober": 10, "November": 11, "Desember": 12
+    import pandas as pd
+    
+    # Handle pandas Timestamp
+    if isinstance(raw_value, pd.Timestamp):
+        return raw_value.year, raw_value.month
+    
+    # Convert to string and clean
+    value_str = str(raw_value).strip()
+    
+    # Remove extra quotes (single or double)
+    value_str = value_str.strip("'\"")
+    
+    print(f"🔍 Parsing: '{value_str}'")
+    
+    # Format 1: "November 2025" atau "november 2025"
+    # Match: <bulan_nama> <tahun>
+    month_names = {
+        'januari': 1, 'january': 1,
+        'februari': 2, 'february': 2,
+        'maret': 3, 'march': 3,
+        'april': 4,
+        'mei': 5, 'may': 5,
+        'juni': 6, 'june': 6,
+        'juli': 7, 'july': 7,
+        'agustus': 8, 'august': 8,
+        'september': 9,
+        'oktober': 10, 'october': 10,
+        'november': 11,
+        'desember': 12, 'december': 12
     }
     
-    # Strip whitespace and normalize
-    month_year_str = month_year_str.strip()
-    print(f"Raw month_year_str: '{repr(month_year_str)}'")  # Debug: lihat karakter tersembunyi
+    for month_name, month_num in month_names.items():
+        if month_name in value_str.lower():
+            # Extract year (4 digits)
+            year_match = re.search(r'\b(20\d{2})\b', value_str)
+            if year_match:
+                year = int(year_match.group(1))
+                print(f"✅ Parsed as '{month_name.title()} {year}' -> ({year}, {month_num})")
+                return year, month_num
     
-    # Split the string (assuming format "Bulan Tahun")
-    parts = month_year_str.split()
-    if len(parts) != 2:
-        raise ValueError(f"Invalid month_year format: {month_year_str}")
+    # Format 2: "DD/MM/YYYY" atau "MM/DD/YYYY"
+    # Kita asumsikan MM/DD/YYYY atau DD/MM/YYYY
+    slash_match = re.match(r'^(\d{1,2})/(\d{1,2})/(\d{4})$', value_str)
+    if slash_match:
+        part1, part2, year = slash_match.groups()
+        part1, part2, year = int(part1), int(part2), int(year)
+        
+        # Detect format: jika part1 > 12, maka format DD/MM/YYYY
+        if part1 > 12:
+            day, month = part1, part2
+        # Jika part2 > 12, maka format MM/DD/YYYY
+        elif part2 > 12:
+            month, day = part1, part2
+        # Jika keduanya <= 12, asumsikan DD/MM/YYYY (format Indonesia)
+        else:
+            day, month = part1, part2
+        
+        print(f"✅ Parsed as date '{value_str}' -> ({year}, {month}) [day={day} ignored]")
+        return year, month
     
-    bulan_str, tahun_str = parts
-    bulan_str = bulan_str.capitalize()  # Normalize case (misalnya, "desember" -> "Desember")
-    if bulan_str not in bulan_indonesia:
-        raise ValueError(f"Unknown month: {bulan_str}")
+    # Format 3: "YYYY-MM-DD" atau "YYYY-MM-DD HH:MM:SS"
+    iso_match = re.match(r'^(\d{4})-(\d{1,2})-(\d{1,2})', value_str)
+    if iso_match:
+        year, month, day = iso_match.groups()
+        year, month = int(year), int(month)
+        print(f"✅ Parsed as ISO date '{value_str}' -> ({year}, {month}) [day ignored]")
+        return year, month
     
-    month = bulan_indonesia[bulan_str]
+    # Format 4: Try datetime parsing as fallback
     try:
-        year = int(tahun_str)
-    except ValueError:
-        raise ValueError(f"Invalid year: {tahun_str}")
+        dt = datetime.strptime(value_str.split()[0], '%Y-%m-%d')
+        print(f"✅ Parsed via datetime -> ({dt.year}, {dt.month})")
+        return dt.year, dt.month
+    except:
+        pass
     
-    return year, month
+    # If all parsing fails
+    raise ValueError(
+        f"Format tidak dikenali: '{value_str}'. "
+        f"Gunakan format: 'November 2025', '11/11/2025', atau '2025-11-01'"
+    )
 
 
 # ============================================================
@@ -893,6 +1247,42 @@ def get_informasi_jadwal():
 # -----------------------
 # CREATE jadwal_karyawan
 # -----------------------
+# @app.route("/api/jadwal-karyawan/create", methods=["POST"])
+# def create_jadwal_karyawan():
+#     try:
+#         data = request.json
+#         nik = data.get("nik")
+#         kode_shift = data.get("kode_shift")
+#         tanggal = data.get("tanggal")
+
+#         conn = get_db_connection()
+#         cursor = conn.cursor()
+
+#         # Cari id_karyawan berdasarkan nik
+#         cursor.execute("SELECT id_karyawan, nama FROM karyawan WHERE nik=%s", (nik,))
+#         karyawan = cursor.fetchone()
+#         if not karyawan:
+#             return jsonify({"error": f"Karyawan dengan NIK {nik} tidak ditemukan"}), 404
+
+#         id_karyawan = karyawan[0]
+#         nama = karyawan[1]
+
+#         # Insert
+#         cursor.execute("""
+#             INSERT INTO jadwal_karyawan (id_karyawan, nama, tanggal, kode_shift)
+#             VALUES (%s, %s, %s, %s)
+#         """, (id_karyawan, nama, tanggal, kode_shift))
+
+#         conn.commit()
+#         cursor.close()
+#         conn.close()
+
+#         return jsonify({"message": "Data jadwal karyawan berhasil ditambahkan"}), 201
+
+#     except Exception as e:
+#         print("ERROR CREATE JADWAL KARYAWAN:", e)
+#         return jsonify({"error": str(e)}), 500
+
 @app.route("/api/jadwal-karyawan/create", methods=["POST"])
 def create_jadwal_karyawan():
     try:
@@ -904,20 +1294,54 @@ def create_jadwal_karyawan():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Cari id_karyawan berdasarkan nik
-        cursor.execute("SELECT id_karyawan, nama FROM karyawan WHERE nik=%s", (nik,))
+        cursor.execute(
+            "SELECT id_karyawan, nama FROM karyawan WHERE nik=%s",
+            (nik,)
+        )
         karyawan = cursor.fetchone()
         if not karyawan:
             return jsonify({"error": f"Karyawan dengan NIK {nik} tidak ditemukan"}), 404
 
-        id_karyawan = karyawan[0]
-        nama = karyawan[1]
+        id_karyawan, nama = karyawan
 
-        # Insert
+        # INSERT jadwal
         cursor.execute("""
             INSERT INTO jadwal_karyawan (id_karyawan, nama, tanggal, kode_shift)
             VALUES (%s, %s, %s, %s)
         """, (id_karyawan, nama, tanggal, kode_shift))
+
+        # Ambil no terakhir (row yang baru diinsert)
+        no_jadwal = cursor.lastrowid
+
+        # ===============================
+        # UPDATE WINDOW START & END
+        # ===============================
+        cursor.execute("""
+            UPDATE jadwal_karyawan jk
+            JOIN shift_info si ON jk.kode_shift = si.kode
+            SET
+                jk.shift_window_start =
+                    CASE
+                        WHEN jk.kode_shift = '3A'
+                            THEN CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 22:00:00')
+                        WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                            THEN NULL
+                        WHEN si.lintas_hari = 1 AND si.jam_masuk > si.jam_pulang
+                            THEN CONCAT(jk.tanggal, ' ', si.jam_masuk)
+                        ELSE CONCAT(jk.tanggal, ' ', si.jam_masuk)
+                    END,
+                jk.shift_window_end =
+                    CASE
+                        WHEN jk.kode_shift = '3A'
+                            THEN CONCAT(jk.tanggal, ' 11:00:00')
+                        WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                            THEN NULL
+                        WHEN si.lintas_hari = 1 AND si.jam_masuk > si.jam_pulang
+                            THEN CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang)
+                        ELSE CONCAT(jk.tanggal, ' ', si.jam_pulang)
+                    END
+            WHERE jk.no = %s
+        """, (no_jadwal,))
 
         conn.commit()
         cursor.close()
@@ -932,37 +1356,91 @@ def create_jadwal_karyawan():
 
 
 
+
 # -----------------------
 # UPDATE jadwal_karyawan
 # -----------------------
+# @app.route("/api/jadwal-karyawan/update/<int:no>", methods=["PUT"])
+# def update_jadwal_karyawan(no):
+#     try:
+#         data = request.get_json(force=True)
+#         nik = data.get("nik")            # ambil NIK dari frontend
+#         kode_shift = data.get("kode_shift")
+#         tanggal = data.get("tanggal")
+
+#         if not nik:
+#             return jsonify({"error": "NIK harus diisi"}), 400
+
+#         conn = get_db_connection()
+#         cursor = conn.cursor()
+
+#         # Cek jadwal ada?
+#         cursor.execute("SELECT COUNT(*) FROM jadwal_karyawan WHERE no=%s", (no,))
+#         if cursor.fetchone()[0] == 0:
+#             return jsonify({"error": "Data jadwal tidak ditemukan"}), 404
+
+#         # Cari id_karyawan berdasarkan NIK
+#         cursor.execute("SELECT id_karyawan, nama FROM karyawan WHERE nik=%s", (nik,))
+#         karyawan = cursor.fetchone()
+#         if not karyawan:
+#             return jsonify({"error": f"Karyawan dengan NIK {nik} tidak ditemukan"}), 404
+
+#         id_karyawan, nama_db = karyawan
+
+#         # Update jadwal
+#         cursor.execute("""
+#             UPDATE jadwal_karyawan SET
+#                 id_karyawan=%s,
+#                 nama=%s,
+#                 tanggal=%s,
+#                 kode_shift=%s
+#             WHERE no=%s
+#         """, (id_karyawan, nama_db, tanggal, kode_shift, no))
+
+#         conn.commit()
+        
+#         # =========================
+#         # TRUNCATE croscek
+#         # =========================
+#         cursor.execute("TRUNCATE TABLE croscek")
+#         conn.commit()
+#         cursor.close()
+#         conn.close()
+
+#         return jsonify({"message": "Data jadwal karyawan berhasil diupdate"})
+
+#     except Exception as e:
+#         print("ERROR UPDATE JADWAL KARYAWAN:", e)
+#         return jsonify({"error": str(e)}), 500
 @app.route("/api/jadwal-karyawan/update/<int:no>", methods=["PUT"])
 def update_jadwal_karyawan(no):
     try:
         data = request.get_json(force=True)
-        nik = data.get("nik")            # ambil NIK dari frontend
+        nik = data.get("nik")
         kode_shift = data.get("kode_shift")
         tanggal = data.get("tanggal")
-
-        if not nik:
-            return jsonify({"error": "NIK harus diisi"}), 400
 
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Cek jadwal ada?
-        cursor.execute("SELECT COUNT(*) FROM jadwal_karyawan WHERE no=%s", (no,))
+        cursor.execute(
+            "SELECT COUNT(*) FROM jadwal_karyawan WHERE no=%s",
+            (no,)
+        )
         if cursor.fetchone()[0] == 0:
             return jsonify({"error": "Data jadwal tidak ditemukan"}), 404
 
-        # Cari id_karyawan berdasarkan NIK
-        cursor.execute("SELECT id_karyawan, nama FROM karyawan WHERE nik=%s", (nik,))
+        cursor.execute(
+            "SELECT id_karyawan, nama FROM karyawan WHERE nik=%s",
+            (nik,)
+        )
         karyawan = cursor.fetchone()
         if not karyawan:
             return jsonify({"error": f"Karyawan dengan NIK {nik} tidak ditemukan"}), 404
 
-        id_karyawan, nama_db = karyawan
+        id_karyawan, nama = karyawan
 
-        # Update jadwal
+        # UPDATE jadwal utama
         cursor.execute("""
             UPDATE jadwal_karyawan SET
                 id_karyawan=%s,
@@ -970,7 +1448,40 @@ def update_jadwal_karyawan(no):
                 tanggal=%s,
                 kode_shift=%s
             WHERE no=%s
-        """, (id_karyawan, nama_db, tanggal, kode_shift, no))
+        """, (id_karyawan, nama, tanggal, kode_shift, no))
+
+        # ===============================
+        # UPDATE WINDOW START & END
+        # ===============================
+        cursor.execute("""
+            UPDATE jadwal_karyawan jk
+            JOIN shift_info si ON jk.kode_shift = si.kode
+            SET
+                jk.shift_window_start =
+                    CASE
+                        WHEN jk.kode_shift = '3A'
+                            THEN CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 22:00:00')
+                        WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                            THEN NULL
+                        WHEN si.lintas_hari = 1 AND si.jam_masuk > si.jam_pulang
+                            THEN CONCAT(jk.tanggal, ' ', si.jam_masuk)
+                        ELSE CONCAT(jk.tanggal, ' ', si.jam_masuk)
+                    END,
+                jk.shift_window_end =
+                    CASE
+                        WHEN jk.kode_shift = '3A'
+                            THEN CONCAT(jk.tanggal, ' 11:00:00')
+                        WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                            THEN NULL
+                        WHEN si.lintas_hari = 1 AND si.jam_masuk > si.jam_pulang
+                            THEN CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang)
+                        ELSE CONCAT(jk.tanggal, ' ', si.jam_pulang)
+                    END
+            WHERE jk.no = %s
+        """, (no,))
+
+        # Reset hasil croscek
+        cursor.execute("TRUNCATE TABLE croscek")
 
         conn.commit()
         cursor.close()
@@ -1034,6 +1545,113 @@ def clear_jadwal_karyawan():
 # ============================================================
 # IMPORT JADWAL KARYAWAN — AUTO INCREMENT READY
 # ============================================================
+# @app.route("/api/import-jadwal-karyawan", methods=["POST"])
+# def import_jadwal():
+#     if "file" not in request.files:
+#         return jsonify({"error": "File tidak ditemukan"}), 400
+
+#     file = request.files["file"]
+
+#     # Baca Excel
+#     try:
+#         df = pd.read_excel(file, header=None)
+#     except Exception as e:
+#         return jsonify({"error": f"Gagal membaca file Excel: {str(e)}"}), 500
+
+#     # Ambil bulan dan tahun
+#     try:
+#         month_year_str = str(df.iloc[1, 0]).strip()
+#         year, month = parse_month_year(month_year_str)
+#     except Exception as e:
+#         return jsonify({"error": f"Gagal parsing bulan/tahun: {str(e)}"}), 400
+
+#     days_in_month = monthrange(year, month)[1]
+#     data = df.iloc[5:, :]
+
+#     conn = db()
+#     cur = conn.cursor()
+
+#     # Ambil semua kode valid
+#     cur.execute("SELECT kode FROM informasi_jadwal")
+#     valid_kode_shift = {row[0].strip() for row in cur.fetchall()}
+
+#     # Ambil semua id_karyawan dari database sekali saja
+#     cur.execute("SELECT id_karyawan, nik, nama FROM karyawan")
+#     karyawan_dict = {row[1]: {"id": row[0], "nama": row[2]} for row in cur.fetchall()}
+
+#     # Hapus jadwal lama bulan ini
+#     cur.execute("DELETE FROM jadwal_karyawan WHERE YEAR(tanggal)=%s AND MONTH(tanggal)=%s", (year, month))
+#     conn.commit()
+
+#     inserted_count = 0
+#     invalid_codes = []
+#     batch_size = 500  # commit setiap 500 insert
+#     batch_counter = 0
+
+#     for idx, row in data.iterrows():
+#         nik = str(row[1]).strip() if pd.notna(row[1]) else ""
+#         nama_excel = str(row[2]).strip() if pd.notna(row[2]) else ""
+
+#         if not nik or nik not in karyawan_dict:
+#             invalid_codes.append({
+#                 "nik": nik,
+#                 "nama": nama_excel,
+#                 "error": "Karyawan tidak ditemukan"
+#             })
+#             continue
+
+#         id_karyawan = karyawan_dict[nik]["id"]
+#         nama = karyawan_dict[nik]["nama"]
+
+#         for col_idx in range(3, 3 + days_in_month):
+#             if col_idx >= len(row):
+#                 break
+
+#             raw_kode = row[col_idx]
+#             if pd.isna(raw_kode):
+#                 continue
+
+#             kode_shift = str(raw_kode).strip()
+#             if not kode_shift:
+#                 continue
+
+#             if kode_shift not in valid_kode_shift:
+#                 invalid_codes.append({
+#                     "nik": nik,
+#                     "nama": nama,
+#                     "tanggal": f"{year}-{month}-{col_idx-2}",
+#                     "kode_shift": kode_shift
+#                 })
+#                 continue
+
+#             day = col_idx - 2
+#             tanggal = datetime(year, month, day).date()
+
+#             cur.execute("""
+#                 INSERT INTO jadwal_karyawan (id_karyawan, nama, tanggal, kode_shift)
+#                 VALUES (%s, %s, %s, %s)
+#             """, (id_karyawan, nama, tanggal, kode_shift))
+
+#             inserted_count += 1
+#             batch_counter += 1
+
+#             if batch_counter >= batch_size:
+#                 conn.commit()
+#                 batch_counter = 0
+
+#     if batch_counter > 0:
+#         conn.commit()
+
+#     cur.close()
+#     conn.close()
+
+#     return jsonify({
+#         "message": f"Import selesai! {inserted_count} data berhasil disimpan.",
+#         "invalid_codes": invalid_codes
+#     })
+
+
+
 @app.route("/api/import-jadwal-karyawan", methods=["POST"])
 def import_jadwal():
     if "file" not in request.files:
@@ -1044,18 +1662,36 @@ def import_jadwal():
     # Baca Excel
     try:
         df = pd.read_excel(file, header=None)
+        print(f"📊 Total baris di Excel: {len(df)}")
+        print(f"📊 Total kolom di Excel: {len(df.columns)}")
     except Exception as e:
         return jsonify({"error": f"Gagal membaca file Excel: {str(e)}"}), 500
 
-    # Ambil bulan dan tahun
+    # Ambil bulan dan tahun dengan error handling yang lebih baik
     try:
-        month_year_str = str(df.iloc[1, 0]).strip()
-        year, month = parse_month_year(month_year_str)
+        raw_cell = df.iloc[1, 0]
+        
+        # Jika cell berupa timestamp/datetime dari pandas
+        if isinstance(raw_cell, pd.Timestamp):
+            year = raw_cell.year
+            month = raw_cell.month
+            print(f"✓ Detected pandas Timestamp: {year}-{month}")
+        else:
+            month_year_str = str(raw_cell).strip()
+            print(f"Raw month_year_str: {repr(month_year_str)}")
+            year, month = parse_month_year(month_year_str)
+            
     except Exception as e:
-        return jsonify({"error": f"Gagal parsing bulan/tahun: {str(e)}"}), 400
+        return jsonify({
+            "error": f"Gagal parsing bulan/tahun: {str(e)}",
+            "hint": "Format yang didukung: 'November 2025', '11/11/2025', '2025-11-01'"
+        }), 400
 
     days_in_month = monthrange(year, month)[1]
+    print(f"📅 Bulan: {month}, Tahun: {year}, Jumlah hari: {days_in_month}")
+    
     data = df.iloc[5:, :]
+    print(f"📋 Jumlah baris data karyawan: {len(data)}")
 
     conn = db()
     cur = conn.cursor()
@@ -1063,35 +1699,72 @@ def import_jadwal():
     # Ambil semua kode valid
     cur.execute("SELECT kode FROM informasi_jadwal")
     valid_kode_shift = {row[0].strip() for row in cur.fetchall()}
+    print(f"✅ Kode shift valid: {valid_kode_shift}")
 
     # Ambil semua id_karyawan dari database sekali saja
     cur.execute("SELECT id_karyawan, nik, nama FROM karyawan")
-    karyawan_dict = {row[1]: {"id": row[0], "nama": row[2]} for row in cur.fetchall()}
+    karyawan_rows = cur.fetchall()
+    karyawan_dict = {row[1]: {"id": row[0], "nama": row[2]} for row in karyawan_rows}
+    print(f"👥 Total karyawan di database: {len(karyawan_dict)}")
+    print(f"📋 NIK di database: {list(karyawan_dict.keys())[:10]}")  # Show first 10
 
     # Hapus jadwal lama bulan ini
     cur.execute("DELETE FROM jadwal_karyawan WHERE YEAR(tanggal)=%s AND MONTH(tanggal)=%s", (year, month))
+    deleted_rows = cur.rowcount
     conn.commit()
+    print(f"🗑️ Deleted {deleted_rows} jadwal lama")
 
     inserted_count = 0
     invalid_codes = []
-    batch_size = 500  # commit setiap 500 insert
+    not_found_employees = []
+    batch_size = 5000
     batch_counter = 0
 
     for idx, row in data.iterrows():
-        nik = str(row[1]).strip() if pd.notna(row[1]) else ""
+        nik_raw = row[1]
+        nik = str(nik_raw).strip() if pd.notna(nik_raw) else ""
         nama_excel = str(row[2]).strip() if pd.notna(row[2]) else ""
-
-        if not nik or nik not in karyawan_dict:
-            invalid_codes.append({
+        
+        # print(f"\n🔍 Processing: NIK='{nik}' (type: {type(nik_raw)}), Nama={nama_excel}")
+        
+        # Debug: cek apakah NIK ada di dictionary
+        if nik:
+            # Coba konversi ke int jika memungkinkan untuk matching
+            nik_variations = [
+                nik,  # Original string
+                str(int(float(nik))) if nik.replace('.', '').isdigit() else nik,  # As integer string
+            ]
+            # print(f"  🔎 NIK variations to check: {nik_variations}")
+            
+            found = False
+            for nik_variant in nik_variations:
+                if nik_variant in karyawan_dict:
+                    nik = nik_variant  # Use the matching variant
+                    found = True
+                    break
+            
+            if not found:
+                not_found_employees.append({
+                    "nik": nik,
+                    "nama": nama_excel,
+                    "error": "Karyawan tidak ditemukan di database"
+                })
+                print(f"  ❌ Karyawan tidak ditemukan")
+                continue
+        else:
+            not_found_employees.append({
                 "nik": nik,
                 "nama": nama_excel,
-                "error": "Karyawan tidak ditemukan"
+                "error": "NIK kosong"
             })
+            print(f"  ❌ NIK kosong")
             continue
 
         id_karyawan = karyawan_dict[nik]["id"]
         nama = karyawan_dict[nik]["nama"]
+        # print(f"  ✅ Found: ID={id_karyawan}, Nama={nama}")
 
+        shift_count = 0
         for col_idx in range(3, 3 + days_in_month):
             if col_idx >= len(row):
                 break
@@ -1104,38 +1777,320 @@ def import_jadwal():
             if not kode_shift:
                 continue
 
+            day = col_idx - 2
+            # print(f"    Day {day}: kode_shift='{kode_shift}'")
+
             if kode_shift not in valid_kode_shift:
                 invalid_codes.append({
                     "nik": nik,
                     "nama": nama,
-                    "tanggal": f"{year}-{month}-{col_idx-2}",
+                    "tanggal": f"{year}-{month:02d}-{day:02d}",
                     "kode_shift": kode_shift
                 })
+                print(f"    ⚠️ Invalid kode: {kode_shift}")
                 continue
 
-            day = col_idx - 2
             tanggal = datetime(year, month, day).date()
 
-            cur.execute("""
-                INSERT INTO jadwal_karyawan (id_karyawan, nama, tanggal, kode_shift)
-                VALUES (%s, %s, %s, %s)
-            """, (id_karyawan, nama, tanggal, kode_shift))
+            try:
+                cur.execute("""
+                    INSERT INTO jadwal_karyawan (id_karyawan, nama, tanggal, kode_shift)
+                    VALUES (%s, %s, %s, %s)
+                """, (id_karyawan, nama, tanggal, kode_shift))
+                
+                inserted_count += 1
+                shift_count += 1
+                batch_counter += 1
 
-            inserted_count += 1
-            batch_counter += 1
+                if batch_counter >= batch_size:
+                    conn.commit()
+                    print(f"💾 Batch commit: {batch_counter} records")
+                    batch_counter = 0
+                    
+                # ==========================================
+                # HITUNG SHIFT WINDOW (OPS I - FINAL & AMAN)
+                # ==========================================
+                # print("🕒 Menghitung shift window...")
 
-            if batch_counter >= batch_size:
+                # cur.execute("""
+                #     UPDATE jadwal_karyawan jk
+                #     JOIN shift_info si 
+                #     ON jk.kode_shift = si.kode
+                #     SET
+                #     jk.shift_window_start =
+                #         CASE
+                        
+                #         -- ===============================
+                #         -- SHIFT KHUSUS 3A
+                #         -- ===============================
+                #         # WHEN jk.kode_shift = '3A'
+                #         #     THEN CONCAT(
+                #         #         DATE_SUB(jk.tanggal, INTERVAL 1 DAY),
+                #         #         ' ',
+                #         #         si.jam_masuk
+                #         #         )
+                        
+                #         WHEN jk.kode_shift = '3A'
+                #             THEN CONCAT(
+                #                 DATE_SUB(jk.tanggal, INTERVAL 1 DAY),
+                #                 ' 22:00:00'
+                #             )
+                        
+                #         /* ===============================
+                #         SHIFT LIBUR / CUTI
+                #         =============================== */
+                #         WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                #             THEN NULL
+
+                #         -- ===============================
+                #         -- LINTAS HARI NORMAL
+                #         -- ===============================
+                #         WHEN si.lintas_hari = 1
+                #             AND si.jam_masuk > si.jam_pulang
+                #             THEN CONCAT(
+                #                 jk.tanggal,
+                #                 ' ',
+                #                 si.jam_masuk
+                #                 )
+
+                #         -- ===============================
+                #         -- NON LINTAS HARI
+                #         -- ===============================
+                #         ELSE CONCAT(jk.tanggal, ' ', si.jam_masuk)
+                #         END,
+
+                #     jk.shift_window_end =
+                #         CASE
+                #         -- ===============================
+                #         -- SHIFT KHUSUS 3A
+                #         -- ===============================
+                #         # WHEN jk.kode_shift = '3A'
+                #         #     THEN CONCAT(
+                #         #         jk.tanggal,
+                #         #         ' ',
+                #         #         si.jam_pulang
+                #         #         )
+                        
+                #         WHEN jk.kode_shift = '3A'
+                #             THEN CONCAT(
+                #                 jk.tanggal,
+                #                 ' 11:00:00'
+                #             )
+                                
+                #         /* ===============================
+                #         SHIFT LIBUR / CUTI
+                #         =============================== */
+                #         WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                #             THEN NULL
+
+                #         -- ===============================
+                #         -- LINTAS HARI NORMAL
+                #         -- ===============================
+                #         WHEN si.lintas_hari = 1
+                #             AND si.jam_masuk > si.jam_pulang
+                #             THEN CONCAT(
+                #                 DATE_ADD(jk.tanggal, INTERVAL 1 DAY),
+                #                 ' ',
+                #                 si.jam_pulang
+                #                 )
+
+                #         -- ===============================
+                #         -- NON LINTAS HARI
+                #         -- ===============================
+                #         ELSE CONCAT(jk.tanggal, ' ', si.jam_pulang)
+                #         END
+                #     WHERE YEAR(jk.tanggal) = %s
+                #     AND MONTH(jk.tanggal) = %s;
+                # """, (year, month))
+                
+                # Perbaikan pada bagian UPDATE shift_window di import_jadwal()
+                # Ganti bagian UPDATE yang lama dengan kode ini:
+
+                cur.execute("""
+                    UPDATE jadwal_karyawan jk
+                    JOIN shift_info si 
+                    ON jk.kode_shift = si.kode
+                    SET
+                    jk.shift_window_start =
+                        CASE
+                        -- ===============================
+                        -- SHIFT KHUSUS 3A (PERBAIKAN)
+                        -- Window: H-1 22:00 s/d H 11:00
+                        -- ===============================
+                        WHEN jk.kode_shift = '3A'
+                            THEN CONCAT(
+                                DATE_SUB(jk.tanggal, INTERVAL 1 DAY),
+                                ' 22:00:00'
+                            )
+                        
+                        -- ===============================
+                        -- SHIFT LIBUR / CUTI
+                        -- ===============================
+                        WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                            THEN NULL
+
+                        -- ===============================
+                        -- LINTAS HARI NORMAL
+                        -- ===============================
+                        WHEN si.lintas_hari = 1
+                            AND si.jam_masuk > si.jam_pulang
+                            THEN CONCAT(
+                                jk.tanggal,
+                                ' ',
+                                si.jam_masuk
+                                )
+
+                        -- ===============================
+                        -- NON LINTAS HARI
+                        -- ===============================
+                        ELSE CONCAT(jk.tanggal, ' ', si.jam_masuk)
+                        END,
+
+                    jk.shift_window_end =
+                        CASE
+                        -- ===============================
+                        -- SHIFT KHUSUS 3A (PERBAIKAN)
+                        -- ===============================
+                        WHEN jk.kode_shift = '3A'
+                            THEN CONCAT(
+                                jk.tanggal,
+                                ' 11:00:00'
+                            )
+                                
+                        -- ===============================
+                        -- SHIFT LIBUR / CUTI
+                        -- ===============================
+                        WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                            THEN NULL
+
+                        -- ===============================
+                        -- LINTAS HARI NORMAL
+                        -- ===============================
+                        WHEN si.lintas_hari = 1
+                            AND si.jam_masuk > si.jam_pulang
+                            THEN CONCAT(
+                                DATE_ADD(jk.tanggal, INTERVAL 1 DAY),
+                                ' ',
+                                si.jam_pulang
+                                )
+
+                        -- ===============================
+                        -- NON LINTAS HARI
+                        -- ===============================
+                        ELSE CONCAT(jk.tanggal, ' ', si.jam_pulang)
+                        END
+                    WHERE YEAR(jk.tanggal) = %s
+                    AND MONTH(jk.tanggal) = %s;
+                """, (year, month))
+                
+                # Ganti bagian UPDATE yang lama dengan kode ini di fungsi import_jadwal():
+                # cur.execute("""
+                #     UPDATE jadwal_karyawan jk
+                #     JOIN shift_info si 
+                #     ON jk.kode_shift = si.kode
+                #     SET
+                #     jk.shift_window_start =
+                #         CASE
+                #         -- ===============================
+                #         -- SHIFT KHUSUS 3A (PERBAIKAN: Window lebih luas)
+                #         -- Window start: H-1 22:00 (untuk scan malam sebelumnya)
+                #         -- ===============================
+                #         WHEN jk.kode_shift = '3A'
+                #             THEN CONCAT(
+                #                 DATE_SUB(jk.tanggal, INTERVAL 1 DAY),
+                #                 ' 22:00:00'
+                #             )
+                        
+                #         -- ===============================
+                #         -- SHIFT LIBUR / CUTI
+                #         -- ===============================
+                #         WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                #             THEN NULL
+
+                #         -- ===============================
+                #         -- LINTAS HARI NORMAL
+                #         -- ===============================
+                #         WHEN si.lintas_hari = 1
+                #             AND si.jam_masuk > si.jam_pulang
+                #             THEN CONCAT(
+                #                 jk.tanggal,
+                #                 ' ',
+                #                 si.jam_masuk
+                #                 )
+
+                #         -- ===============================
+                #         -- NON LINTAS HARI
+                #         -- ===============================
+                #         ELSE CONCAT(jk.tanggal, ' ', si.jam_masuk)
+                #         END,
+
+                #     jk.shift_window_end =
+                #         CASE
+                #         -- ===============================
+                #         -- SHIFT KHUSUS 3A (PERBAIKAN: Window diperpanjang hingga H+1 05:00)
+                #         -- Untuk menangkap scan masuk telat hingga dini hari H+1
+                #         -- ===============================
+                #         WHEN jk.kode_shift = '3A'
+                #             THEN CONCAT(
+                #                 DATE_ADD(jk.tanggal, INTERVAL 1 DAY),
+                #                 ' 05:00:00'
+                #             )
+                                                
+                #         -- ===============================
+                #         -- SHIFT LIBUR / CUTI
+                #         -- ===============================
+                #         WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                #             THEN NULL
+
+                #         -- ===============================
+                #         -- LINTAS HARI NORMAL
+                #         -- ===============================
+                #         WHEN si.lintas_hari = 1
+                #             AND si.jam_masuk > si.jam_pulang
+                #             THEN CONCAT(
+                #                 DATE_ADD(jk.tanggal, INTERVAL 1 DAY),
+                #                 ' ',
+                #                 si.jam_pulang
+                #                 )
+
+                #         -- ===============================
+                #         -- NON LINTAS HARI
+                #         -- ===============================
+                #         ELSE CONCAT(jk.tanggal, ' ', si.jam_pulang)
+                #         END
+                #     WHERE YEAR(jk.tanggal) = %s
+                #     AND MONTH(jk.tanggal) = %s;
+                # """, (year, month))
+
                 conn.commit()
-                batch_counter = 0
+
+                # conn.commit()
+                # print("✅ Shift window berhasil dihitung")
+
+            except Exception as e:
+                print(f"    ❌ Insert error: {str(e)}")
+                continue
+        
+        # print(f"  📊 Total shift inserted for {nama}: {shift_count}")
 
     if batch_counter > 0:
+        # Reset hasil croscek
+        cur.execute("TRUNCATE TABLE croscek")
         conn.commit()
+        print(f"💾 Final commit: {batch_counter} records")
 
     cur.close()
     conn.close()
 
+    print(f"\n✅ SUMMARY: {inserted_count} data berhasil disimpan")
+    print(f"❌ Karyawan tidak ditemukan: {len(not_found_employees)}")
+    print(f"⚠️ Kode shift invalid: {len(invalid_codes)}")
+
     return jsonify({
-        "message": f"Import selesai! {inserted_count} data berhasil disimpan.",
+        "message": f"Import selesai! {inserted_count} data berhasil disimpan untuk {month}/{year}.",
+        "period": f"{month}/{year}",
+        "inserted_count": inserted_count,
+        "not_found_employees": not_found_employees,
         "invalid_codes": invalid_codes
     })
 
@@ -1299,17 +2254,30 @@ def delete_kehadiran_period():
         conn = db()
         cur = conn.cursor()
         
-        # Query hapus berdasarkan bulan dan tahun
-        query = "DELETE FROM kehadiran_karyawan WHERE MONTH(tanggal) = %s AND YEAR(tanggal) = %s"
-        cur.execute(query, (bulan, tahun))
+        # Query hapus dari kehadiran_karyawan berdasarkan bulan dan tahun
+        query_kehadiran = "DELETE FROM kehadiran_karyawan WHERE MONTH(tanggal) = %s AND YEAR(tanggal) = %s"
+        cur.execute(query_kehadiran, (bulan, tahun))
+        deleted_kehadiran = cur.rowcount
+        
+        # # Query hapus dari croscek berdasarkan bulan dan tahun
+        # query_croscek = "DELETE FROM croscek WHERE MONTH(Tanggal) = %s AND YEAR(Tanggal) = %s"
+        # cur.execute(query_croscek, (bulan, tahun))
+        # deleted_croscek = cur.rowcount
+        # HAPUS TOTAL DATA CROSCEK (FULL REBUILD)
+        cur.execute("TRUNCATE TABLE croscek")
+        deleted_croscek = -1  # rowcount tidak valid untuk TRUNCATE
+
+        
         conn.commit()
-        
-        deleted_count = cur.rowcount
-        
         cur.close()
         conn.close()
         
-        return jsonify({"message": f"Berhasil hapus {deleted_count} data kehadiran untuk periode {bulan}/{tahun}"})
+        return jsonify({
+            "message": f"Berhasil hapus data untuk periode {bulan}/{tahun}",
+            "kehadiran_deleted": deleted_kehadiran,
+            "croscek_deleted": deleted_croscek,
+            "total_deleted": deleted_kehadiran + deleted_croscek
+        })
     except Exception as e:
         print("ERROR DELETE PERIOD:", e)
         return jsonify({"error": str(e)}), 500
@@ -1317,178 +2285,2082 @@ def delete_kehadiran_period():
 
 
 # ===========================================================
-# CROSCEK (QUERY LENGKAP SESUAI PERMINTAAN)
+# CROSCEK (QUERY LENGKAP SESUAI PERMINTAAN) - OPTIMIZED
 # ===========================================================
-@app.route("/api/croscek", methods=["GET"])
+@app.route("/api/croscek", methods=["GET", "POST"])
 def proses_croscek():
-    try:
-        conn = db()
-        cur = conn.cursor(dictionary=True)
-
-        # Query logika croscek sesuai permintaan
-        query = """
-        SELECT
-            base.Nama,
-            base.Tanggal,
-            base.Kode_Shift,
-            base.Jabatan,
-            base.Departemen,
-            base.id_karyawan,
-            base.NIK,
-            base.Jadwal_Masuk,
-            base.Jadwal_Pulang,
-            base.Actual_Masuk,
-            base.Actual_Pulang,
-
-            CASE
-                WHEN base.Kode_Shift IN ('CT','CTT','EO','OF1','CTB','X')
-                    THEN ij.keterangan
-                WHEN base.Actual_Masuk IS NULL AND base.Actual_Pulang IS NULL
-                    THEN 'Tidak Hadir'
-                ELSE 'Hadir'
-            END AS Status_Kehadiran,
-
-            CASE
-                WHEN base.Actual_Masuk IS NULL THEN 'Tidak scan masuk'
-                WHEN base.Actual_Masuk <= base.Scheduled_Start THEN 'Masuk Tepat Waktu'
-                ELSE 'Masuk Telat'
-            END AS Status_Masuk,
-
-            CASE
-                WHEN base.Actual_Pulang IS NULL THEN 'Tidak scan pulang'
-                WHEN base.Actual_Pulang >= base.Scheduled_End THEN 'Pulang Tepat Waktu'
-                ELSE 'Pulang Terlalu Cepat'
-            END AS Status_Pulang
-
-        FROM (
-
+    conn = db()
+    cur = conn.cursor(dictionary=True)
+    if request.method == "GET":
+        try:
+            # 🔥 OPTIMIZATION 1: Check if data already exists
+            cur.execute("SELECT COUNT(*) as count FROM croscek")
+            existing_count = cur.fetchone()["count"]
+            
+            if existing_count > 0:
+                # Data sudah ada, ambil langsung dari tabel croscek (jauh lebih cepat)
+                cur.execute("""
+                    SELECT
+                        Nama,
+                        Tanggal,
+                        Kode_Shift,
+                        Jabatan,
+                        Departemen,
+                        id_karyawan,
+                        NIK,
+                        Jadwal_Masuk,
+                        Jadwal_Pulang,
+                        Actual_Masuk,
+                        Actual_Pulang,
+                        Status_Kehadiran,
+                        Status_Masuk,
+                        Status_Pulang
+                    FROM croscek
+                    ORDER BY Nama, Tanggal
+                """)
+                
+                result_rows = cur.fetchall()
+                
+                # Convert TIME/DATE fields to strings for JSON serialization
+                for row in result_rows:
+                    if row['Jadwal_Masuk'] is not None:
+                        row['Jadwal_Masuk'] = str(row['Jadwal_Masuk'])
+                    if row['Jadwal_Pulang'] is not None:
+                        row['Jadwal_Pulang'] = str(row['Jadwal_Pulang'])
+                    if row['Actual_Masuk'] is not None:
+                        row['Actual_Masuk'] = str(row['Actual_Masuk'])
+                    if row['Actual_Pulang'] is not None:
+                        row['Actual_Pulang'] = str(row['Actual_Pulang'])
+                    if isinstance(row['Tanggal'], date):
+                        row['Tanggal'] = str(row['Tanggal'])
+                
+                cur.close()
+                conn.close()
+                
+                return jsonify({
+                    "data": result_rows,
+                    "summary": {
+                        "total": len(result_rows),
+                        "inserted": 0,
+                        "skipped": 0,
+                        "from_cache": True
+                    }
+                })
+            
+            # Data belum ada, proses dengan query lengkap
+            querydefault = """
             SELECT
-                jk.nama AS Nama,
-                jk.tanggal AS Tanggal,
-                jk.kode_shift AS Kode_Shift,
-                si.jam_masuk AS Jadwal_Masuk,
-                si.jam_pulang AS Jadwal_Pulang,
-
-                -- ambil dari master karyawan dulu, fallback jika tidak ada
-                COALESCE(
-                    k.jabatan,
-                    (
-                        SELECT k1.jabatan
-                        FROM kehadiran_karyawan k1
-                        WHERE k1.nama = jk.nama
-                        AND k1.tanggal = jk.tanggal
-                        ORDER BY k1.tanggal_scan ASC
-                        LIMIT 1
-                    )
-                ) AS Jabatan,
-
-                COALESCE(
-                    k.dept,
-                    (
-                        SELECT k2.departemen
-                        FROM kehadiran_karyawan k2
-                        WHERE k2.nama = jk.nama
-                        AND k2.tanggal = jk.tanggal
-                        ORDER BY k2.tanggal_scan ASC
-                        LIMIT 1
-                    )
-                ) AS Departemen,
-
-                -- 🔥 Tambahan wajib untuk SELECT luar
-                k.id_karyawan AS id_karyawan,
-                k.nik AS NIK,
-
-                CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) AS Scheduled_Start,
+                base.Nama,
+                base.Tanggal,
+                base.Kode_Shift,
+                base.Jabatan,
+                base.Departemen,
+                base.id_karyawan,
+                base.NIK,
+                base.Jadwal_Masuk,
+                base.Jadwal_Pulang,
+                base.Actual_Masuk,
+                base.Actual_Pulang,
 
                 CASE
-                    WHEN si.jam_pulang < si.jam_masuk
-                        THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
-                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
-                END AS Scheduled_End,
+                    WHEN base.Kode_Shift IN ('CT','CTT','EO','OF1','CTB','X')
+                        THEN ij.keterangan
+                    WHEN base.Actual_Masuk IS NULL AND base.Actual_Pulang IS NULL
+                        THEN 'Tidak Hadir'
+                    ELSE 'Hadir'
+                END AS Status_Kehadiran,
 
-                (CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 4 HOUR) AS Range_Masuk_Start,
-                (CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR) AS Range_Masuk_End,
+                CASE
+                    WHEN base.Actual_Masuk IS NULL THEN 'Tidak scan masuk'
+                    WHEN base.Actual_Masuk <= base.Scheduled_Start THEN 'Masuk Tepat Waktu'
+                    ELSE 'Masuk Telat'
+                END AS Status_Masuk,
 
-                (
-                    CASE WHEN si.jam_pulang < si.jam_masuk
-                        THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                CASE
+                    WHEN base.Actual_Pulang IS NULL THEN 'Tidak scan pulang'
+                    WHEN base.Actual_Pulang >= base.Scheduled_End THEN 'Pulang Tepat Waktu'
+                    ELSE 'Pulang Terlalu Cepat'
+                END AS Status_Pulang
+
+            FROM (
+
+                SELECT
+                    jk.nama AS Nama,
+                    jk.tanggal AS Tanggal,
+                    jk.kode_shift AS Kode_Shift,
+                    si.jam_masuk AS Jadwal_Masuk,
+                    si.jam_pulang AS Jadwal_Pulang,
+
+                    k.jabatan AS Jabatan,
+                    k.dept AS Departemen,
+                    k.id_karyawan,
+                    k.nik,
+
+                    CASE
+                        WHEN si.lintas_hari = 0 AND si.jam_masuk = '00:00:00'
+                            THEN CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 23:00:00') AS DATETIME)
+                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME)
+                    END AS Scheduled_Start,
+                    
+                    # CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) AS Scheduled_Start,
+
+                    CASE
+                        WHEN si.lintas_hari = 1
+                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
                         ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
-                    END - INTERVAL 6 HOUR
-                ) AS Range_Pulang_Start,
+                    END AS Scheduled_End,
 
-                (
-                    CASE WHEN si.jam_pulang < si.jam_masuk
-                        THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+
+                    /* =====================
+                    ACTUAL MASUK (AMAN)
+                    ===================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        ELSE (
+                            SELECT MIN(k3.tanggal_scan)
+                            FROM kehadiran_karyawan k3
+                            WHERE k3.nama = jk.nama
+                            AND k3.tanggal_scan BETWEEN
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1 AND si.jam_masuk = '00:00:00'
+                                        THEN CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 18:00:00') AS DATETIME)
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                                END
+                            )
+                            AND
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1 AND si.jam_masuk = '00:00:00'
+                                        THEN CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 24 HOUR  -- DIUBAH DARI 4 HOUR KE 24 HOUR
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+                                END
+                            )
+                        )
+                    END AS Actual_Masuk,
+
+                    /* =====================
+                    ACTUAL PULANG (FIX UTAMA)
+                    ===================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        ELSE (
+                            SELECT MAX(k4.tanggal_scan)
+                            FROM kehadiran_karyawan k4
+                            WHERE k4.nama = jk.nama
+                            AND k4.tanggal_scan BETWEEN
+                                (
+                                    CASE
+                                        WHEN si.lintas_hari = 1 AND si.jam_pulang = '00:00:00'
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) - INTERVAL 24 HOUR
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                                    END
+                                )
+                                AND
+                                (
+                                    CASE
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) + INTERVAL 2 HOUR
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) + INTERVAL 6 HOUR
+                                    END
+                                )
+                            AND DATE(k4.tanggal_scan) IN (
+                                DATE(jk.tanggal),
+                                DATE(
+                                    CASE
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                                    END
+                                )
+                            )
+                            AND k4.tanggal_scan > CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 1 HOUR  -- FILTER BARU: SCAN PULANG HARUS SETELAH MASUK +1 JAM
+                            AND k4.tanggal_scan >=
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1
+                                        THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                                            - INTERVAL 2 HOUR
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                                            - INTERVAL 2 HOUR
+                                END
+                            )
+                        )
+                    END AS Actual_Pulang
+
+
+                FROM jadwal_karyawan jk
+                LEFT JOIN shift_info si ON jk.kode_shift = si.kode
+                LEFT JOIN karyawan k ON jk.id_karyawan = k.id_karyawan
+
+                GROUP BY
+                    jk.nama, jk.tanggal, jk.kode_shift,
+                    si.jam_masuk, si.jam_pulang,
+                    k.jabatan, k.dept, k.id_karyawan, k.nik
+
+            ) AS base
+
+            LEFT JOIN informasi_jadwal ij ON ij.kode = base.Kode_Shift
+            ORDER BY base.Nama, base.Tanggal;
+            """
+            
+            querysolving_3a_ditanggal_1_tapi_masih_curi_state_actual = """
+            SELECT
+                base.Nama,
+                base.Tanggal,
+                base.Kode_Shift,
+                base.Jabatan,
+                base.Departemen,
+                base.id_karyawan,
+                base.NIK,
+                base.Jadwal_Masuk,
+                base.Jadwal_Pulang,
+                base.Actual_Masuk,
+                base.Actual_Pulang,
+
+                CASE
+                    WHEN base.Kode_Shift IN ('CT','CTT','EO','OF1','CTB','X')
+                        THEN ij.keterangan
+                    WHEN base.Actual_Masuk IS NULL AND base.Actual_Pulang IS NULL
+                        THEN 'Tidak Hadir'
+                    ELSE 'Hadir'
+                END AS Status_Kehadiran,
+
+                CASE
+                    WHEN base.Actual_Masuk IS NULL THEN 'Tidak scan masuk'
+                    WHEN base.Actual_Masuk <= base.Scheduled_Start THEN 'Masuk Tepat Waktu'
+                    ELSE 'Masuk Telat'
+                END AS Status_Masuk,
+
+                -- ===== STATUS PULANG (FIXED) =====
+                CASE
+                    WHEN base.Actual_Pulang IS NULL 
+                        THEN 'Tidak scan pulang'
+                    -- Pulang terlalu cepat (lebih dari 15 menit sebelum jadwal)
+                    WHEN base.Actual_Pulang < DATE_SUB(base.Scheduled_End, INTERVAL 15 MINUTE)
+                        THEN 'Pulang Terlalu Cepat'
+                    -- Pulang tepat waktu (dalam rentang -15 menit s/d +15 menit dari jadwal)
+                    WHEN base.Actual_Pulang BETWEEN 
+                            DATE_SUB(base.Scheduled_End, INTERVAL 15 MINUTE) 
+                            AND DATE_ADD(base.Scheduled_End, INTERVAL 15 MINUTE)
+                        THEN 'Pulang Tepat Waktu'
+                    -- Pulang telat (lebih dari 15 menit setelah jadwal)
+                    ELSE 'Pulang Tepat Waktu'
+                END AS Status_Pulang
+
+            FROM (
+
+                SELECT
+                    jk.nama AS Nama,
+                    jk.tanggal AS Tanggal,
+                    jk.kode_shift AS Kode_Shift,
+                    si.jam_masuk AS Jadwal_Masuk,
+                    si.jam_pulang AS Jadwal_Pulang,
+
+                    k.jabatan AS Jabatan,
+                    k.dept AS Departemen,
+                    k.id_karyawan,
+                    k.nik,
+
+                    CASE
+                        WHEN si.lintas_hari = 0 AND si.jam_masuk = '00:00:00'
+                            THEN CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 23:00:00') AS DATETIME)
+                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME)
+                    END AS Scheduled_Start,
+
+                    CASE
+                        WHEN si.lintas_hari = 1
+                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
                         ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
-                    END + INTERVAL 6 HOUR
-                ) AS Range_Pulang_End,
+                    END AS Scheduled_End,
 
-                -- MIN scanning masuk
-                (
-                    SELECT MIN(k3.tanggal_scan)
-                    FROM kehadiran_karyawan k3
-                    WHERE k3.nama = jk.nama
-                    AND k3.tanggal_scan BETWEEN
-                        (CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 4 HOUR)
-                        AND (CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR)
-                ) AS Actual_Masuk,
 
-                -- MAX scanning pulang
-                (
-                    SELECT MAX(k4.tanggal_scan)
-                    FROM kehadiran_karyawan k4
-                    WHERE k4.nama = jk.nama
-                    AND k4.tanggal_scan BETWEEN
-                        (
-                            CASE WHEN si.jam_pulang < si.jam_masuk
-                                THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
-                                ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
-                            END - INTERVAL 6 HOUR
+                    /* =====================
+                    ACTUAL MASUK - DENGAN LOGIC KHUSUS SHIFT 3A
+                    ===================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        
+                        -- LOGIC KHUSUS UNTUK SHIFT 3A (LINTAS HARI 00:00-08:00)
+                        WHEN jk.kode_shift IN ('3','3A') AND si.lintas_hari = 1 THEN (
+                            SELECT MIN(k.tanggal_scan)
+                            FROM kehadiran_karyawan k
+                            WHERE k.nama = jk.nama
+                            AND k.tanggal_scan BETWEEN
+                                    CAST(CONCAT(jk.tanggal, ' 23:00:00') AS DATETIME)
+                                AND CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 03:00:00') AS DATETIME)
                         )
-                        AND
-                        (
-                            CASE WHEN si.jam_pulang < si.jam_masuk
-                                THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
-                                ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
-                            END + INTERVAL 6 HOUR
+
+                        
+                        -- LOGIC DEFAULT UNTUK SHIFT LAINNYA (TETAP SEPERTI SEMULA)
+                        ELSE (
+                            SELECT MIN(k3.tanggal_scan)
+                            FROM kehadiran_karyawan k3
+                            WHERE k3.nama = jk.nama
+                            AND k3.tanggal_scan BETWEEN
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1 AND si.jam_masuk = '00:00:00'
+                                        THEN CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 18:00:00') AS DATETIME)
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                                END
+                            )
+                            AND
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1 AND si.jam_masuk = '00:00:00'
+                                        THEN CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 24 HOUR
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+                                END
+                            )
                         )
-                ) AS Actual_Pulang
+                    END AS Actual_Masuk,
 
-            FROM jadwal_karyawan jk
-            LEFT JOIN shift_info si ON jk.kode_shift = si.kode
-            LEFT JOIN karyawan k ON jk.id_karyawan = k.id_karyawan
+                    /* =====================
+                    ACTUAL PULANG - DENGAN LOGIC KHUSUS SHIFT 3A
+                    ===================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        
+                        -- LOGIC KHUSUS UNTUK SHIFT 3A (LINTAS HARI 00:00-08:00)
+                        WHEN jk.kode_shift IN ('3','3A') AND si.lintas_hari = 1 THEN (
+                            SELECT MAX(k.tanggal_scan)
+                            FROM kehadiran_karyawan k
+                            WHERE k.nama = jk.nama
+                            AND k.tanggal_scan BETWEEN
+                                    CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 03:00:00') AS DATETIME)
+                                AND CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 12:00:00') AS DATETIME)
+                        )
+                        
+                        -- LOGIC DEFAULT UNTUK SHIFT LAINNYA (TETAP SEPERTI SEMULA)
+                        ELSE (
+                            SELECT MAX(k4.tanggal_scan)
+                            FROM kehadiran_karyawan k4
+                            WHERE k4.nama = jk.nama
+                            AND k4.tanggal_scan BETWEEN
+                                (
+                                    CASE
+                                        WHEN si.lintas_hari = 1 AND si.jam_pulang = '00:00:00'
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) - INTERVAL 24 HOUR
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                                    END
+                                )
+                                AND
+                                (
+                                    CASE
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) + INTERVAL 2 HOUR
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) + INTERVAL 6 HOUR
+                                    END
+                                )
+                            AND DATE(k4.tanggal_scan) IN (
+                                DATE(jk.tanggal),
+                                DATE(
+                                    CASE
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                                    END
+                                )
+                            )
+                            AND k4.tanggal_scan > CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 1 HOUR
+                            AND k4.tanggal_scan >=
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1
+                                        THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                                            - INTERVAL 2 HOUR
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                                            - INTERVAL 2 HOUR
+                                END
+                            )
+                        )
+                    END AS Actual_Pulang
 
-            GROUP BY
-                jk.nama, jk.tanggal, jk.kode_shift,
-                si.jam_masuk, si.jam_pulang, k.jabatan, k.dept, k.id_karyawan, k.nik
 
-        ) AS base
+                FROM jadwal_karyawan jk
+                LEFT JOIN shift_info si ON jk.kode_shift = si.kode
+                LEFT JOIN karyawan k ON jk.id_karyawan = k.id_karyawan
 
-        LEFT JOIN informasi_jadwal ij ON ij.kode = base.Kode_Shift
-        ORDER BY base.Nama, base.Tanggal;
-        """
+                GROUP BY
+                    jk.nama, jk.tanggal, jk.kode_shift,
+                    si.jam_masuk, si.jam_pulang,
+                    k.jabatan, k.dept, k.id_karyawan, k.nik
 
-        cur.execute(query)
+            ) AS base
+
+            LEFT JOIN informasi_jadwal ij ON ij.kode = base.Kode_Shift
+            ORDER BY base.Nama, base.Tanggal;
+            """
+
+
+
+            query = """
+            SELECT
+                base.Nama,
+                base.Tanggal,
+                base.Kode_Shift,
+                base.Jabatan,
+                base.Departemen,
+                base.id_karyawan,
+                base.NIK,
+                ij.jam_masuk AS Jadwal_Masuk,
+                ij.jam_pulang AS Jadwal_Pulang,
+                base.Actual_Masuk,
+                base.Actual_Pulang,
+
+                /* ===============================
+                STATUS KEHADIRAN
+                =============================== */
+                CASE
+                    WHEN base.Kode_Shift IN ('CT','CTT','EO','OF1','CTB','X')
+                        THEN ij.keterangan
+                    WHEN base.Actual_Masuk IS NULL AND base.Actual_Pulang IS NULL
+                        THEN 'Tidak Hadir'
+                    ELSE 'Hadir'
+                END AS Status_Kehadiran,
+
+                /* ===============================
+                STATUS MASUK → ACUAN dari informasi_jadwal.jam_masuk
+                =============================== */
+                CASE
+                    WHEN base.Actual_Masuk IS NULL
+                        THEN 'Tidak scan masuk'
+                    
+                    -- Khusus untuk shift 3A (00:00-08:00)
+                    WHEN base.Kode_Shift = '3A'
+                        THEN CASE
+                            WHEN DATE(base.Actual_Masuk) = DATE(base.Tanggal)
+                                THEN 'Masuk Tepat Waktu'
+                            ELSE 'Masuk Telat'
+                        END
+                    
+                    -- Untuk shift malam lain yang melewati tengah malam
+                    WHEN ij.jam_pulang < ij.jam_masuk
+                        THEN CASE
+                            WHEN DATE(base.Actual_Masuk) = DATE(base.Tanggal)
+                                THEN 'Masuk Tepat Waktu'
+                            ELSE 'Masuk Telat'
+                        END
+                    
+                    -- Untuk shift normal
+                    ELSE CASE
+                        WHEN TIME(base.Actual_Masuk) > ij.jam_masuk
+                            THEN 'Masuk Telat'
+                        ELSE 'Masuk Tepat Waktu'
+                    END
+                END AS Status_Masuk,
+
+                /* ===============================
+                STATUS PULANG → ACUAN dari informasi_jadwal.jam_pulang
+                =============================== */
+                CASE
+                    WHEN base.Actual_Pulang IS NULL
+                        THEN 'Tidak scan pulang'
+                    
+                    -- Khusus untuk shift 3A
+                    WHEN base.Kode_Shift = '3A'
+                        THEN CASE
+                            WHEN DATE(base.Actual_Pulang) > DATE(base.Tanggal)
+                                THEN CASE
+                                    WHEN TIME(base.Actual_Pulang) < ij.jam_pulang
+                                        THEN 'Pulang Terlalu Cepat'
+                                    ELSE 'Pulang Tepat Waktu'
+                                END
+                            ELSE 'Pulang Terlalu Cepat'
+                        END
+                    
+                    -- Untuk shift malam lain
+                    WHEN ij.jam_pulang < ij.jam_masuk
+                        THEN CASE
+                            WHEN DATE(base.Actual_Pulang) > DATE(base.Tanggal)
+                                THEN CASE
+                                    WHEN TIME(base.Actual_Pulang) < ij.jam_pulang
+                                        THEN 'Pulang Terlalu Cepat'
+                                    ELSE 'Pulang Tepat Waktu'
+                                END
+                            ELSE 'Pulang Terlalu Cepat'
+                        END
+                    
+                    -- Untuk shift normal
+                    ELSE CASE
+                        WHEN TIME(base.Actual_Pulang) < ij.jam_pulang
+                            THEN 'Pulang Terlalu Cepat'
+                        ELSE 'Pulang Tepat Waktu'
+                    END
+                END AS Status_Pulang
+
+            FROM (
+
+                SELECT
+                    jk.nama AS Nama,
+                    jk.tanggal AS Tanggal,
+                    jk.kode_shift AS Kode_Shift,
+                    k.jabatan AS Jabatan,
+                    k.dept AS Departemen,
+                    k.id_karyawan,
+                    k.nik AS NIK,
+
+                    /* ===============================
+                    ACTUAL MASUK
+                    =============================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+
+                        WHEN jk.kode_shift = '3A'
+                        THEN (
+                            SELECT MIN(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.id_karyawan = jk.id_karyawan
+                            AND kk.nama = jk.nama
+                            AND kk.tanggal_scan BETWEEN
+                                    CONCAT(jk.tanggal, ' 22:00:00')
+                                AND CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 03:00:00')
+                        )
+
+                        ELSE (
+                            SELECT MIN(kk2.tanggal_scan)
+                            FROM kehadiran_karyawan kk2
+                            WHERE kk2.id_karyawan = jk.id_karyawan
+                            AND kk2.nama = jk.nama
+                            AND kk2.tanggal_scan BETWEEN
+                                    CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                                AND CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+                        )
+                    END AS Actual_Masuk,
+
+                    /* ===============================
+                    ACTUAL PULANG - DENGAN PEMISAHAN DARI SCAN MASUK
+                    =============================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+
+                        WHEN jk.kode_shift = '3A'
+                        THEN (
+                            SELECT MAX(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.id_karyawan = jk.id_karyawan
+                            AND kk.nama = jk.nama
+                            AND kk.tanggal_scan BETWEEN
+                                    CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 06:00:00')
+                                AND CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 11:00:00')
+                            -- Pastikan berbeda dari scan masuk
+                            AND kk.tanggal_scan <> COALESCE((
+                                SELECT MIN(kk_in.tanggal_scan)
+                                FROM kehadiran_karyawan kk_in
+                                WHERE kk_in.id_karyawan = jk.id_karyawan
+                                    AND kk_in.nama = jk.nama
+                                    AND kk_in.tanggal_scan BETWEEN
+                                        CONCAT(jk.tanggal, ' 22:00:00')
+                                    AND CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 03:00:00')
+                            ), '1900-01-01')
+                        )
+
+                        ELSE (
+                            SELECT MAX(kk3.tanggal_scan)
+                            FROM kehadiran_karyawan kk3
+                            WHERE kk3.id_karyawan = jk.id_karyawan
+                            AND kk3.nama = jk.nama
+                            AND kk3.tanggal_scan BETWEEN
+                                    CAST(CONCAT(jk.tanggal, ' ', ij.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                                AND CAST(CONCAT(jk.tanggal, ' ', ij.jam_pulang) AS DATETIME) + INTERVAL 6 HOUR
+                            -- Pastikan berbeda dari scan masuk
+                            AND kk3.tanggal_scan <> COALESCE((
+                                SELECT MIN(kk2.tanggal_scan)
+                                FROM kehadiran_karyawan kk2
+                                WHERE kk2.id_karyawan = jk.id_karyawan
+                                    AND kk2.nama = jk.nama
+                                    AND kk2.tanggal_scan BETWEEN
+                                        CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                                    AND CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+                            ), '1900-01-01')
+                        )
+                    END AS Actual_Pulang
+
+                FROM jadwal_karyawan jk
+                LEFT JOIN karyawan k ON k.id_karyawan = jk.id_karyawan
+                LEFT JOIN informasi_jadwal ij ON ij.kode = jk.kode_shift
+
+            ) AS base
+
+            LEFT JOIN informasi_jadwal ij ON ij.kode = base.Kode_Shift
+
+            ORDER BY base.Nama, base.Tanggal;
+            """
+            
+
+            query26DESEMBER = """
+            SELECT
+                base.Nama,
+                base.Tanggal,
+                base.Kode_Shift,
+                base.Jabatan,
+                base.Departemen,
+                base.id_karyawan,
+                base.NIK,
+                base.Jadwal_Masuk,
+                base.Jadwal_Pulang,
+                base.Actual_Masuk,
+                base.Actual_Pulang,
+
+                CASE
+                    WHEN base.Kode_Shift IN ('CT','CTT','EO','OF1','CTB','X')
+                        THEN ij.keterangan
+                    WHEN base.Actual_Masuk IS NULL AND base.Actual_Pulang IS NULL
+                        THEN 'Tidak Hadir'
+                    ELSE 'Hadir'
+                END AS Status_Kehadiran,
+
+                # CASE
+                #     WHEN base.Actual_Masuk IS NULL THEN 'Tidak scan masuk'
+                #     WHEN base.Actual_Masuk <= base.Scheduled_Start THEN 'Masuk Tepat Waktu'
+                #     ELSE 'Masuk Telat'
+                # END AS Status_Masuk,
+                
+                # CASE
+                #     WHEN base.Actual_Masuk IS NULL THEN 'Tidak scan masuk'
+
+                #     /* ===== KHUSUS SHIFT 3 & 3A (lintas hari) ===== */
+                #     WHEN base.Kode_Shift IN ('3','3A','D2/3A','D2/3') THEN
+                #         CASE
+                #             WHEN TIME(base.Actual_Masuk) BETWEEN '20:00:00' AND '23:59:59'
+                #             OR TIME(base.Actual_Masuk) BETWEEN '00:00:00' AND '02:59:59'
+                #             THEN 'Masuk Tepat Waktu'
+                #             ELSE 'Masuk Telat'
+                #         END
+
+                #     /* ===== DEFAULT ===== */
+                #     WHEN base.Actual_Masuk <= base.Scheduled_Start THEN 'Masuk Tepat Waktu'
+                #     ELSE 'Masuk Telat'
+                # END AS Status_Masuk,
+                
+                CASE
+                    WHEN base.Actual_Masuk IS NULL
+                        THEN 'Tidak scan masuk'
+
+                    WHEN base.Actual_Masuk > base.Scheduled_Start
+                        THEN 'Masuk Telat'
+
+                    ELSE 'Masuk Tepat Waktu'
+                END AS Status_Masuk,
+
+
+
+                -- ===== STATUS PULANG (FIXED) =====
+                # CASE
+                #     WHEN base.Actual_Pulang IS NULL 
+                #         THEN 'Tidak scan pulang'
+                #     -- Pulang terlalu cepat (lebih dari 15 menit sebelum jadwal)
+                #     WHEN base.Actual_Pulang < DATE_SUB(base.Scheduled_End, INTERVAL 15 MINUTE)
+                #         THEN 'Pulang Terlalu Cepat'
+                #     -- Pulang tepat waktu (dalam rentang -15 menit s/d +15 menit dari jadwal)
+                #     WHEN base.Actual_Pulang BETWEEN 
+                #             DATE_SUB(base.Scheduled_End, INTERVAL 15 MINUTE) 
+                #             AND DATE_ADD(base.Scheduled_End, INTERVAL 15 MINUTE)
+                #         THEN 'Pulang Tepat Waktu'
+                #     -- Pulang telat (lebih dari 15 menit setelah jadwal)
+                #     ELSE 'Pulang Tepat Waktu'
+                # END AS Status_Pulang
+                
+                # CASE
+                #     WHEN base.Actual_Pulang IS NULL THEN 'Tidak scan pulang'
+
+                #     /* ===== KHUSUS SHIFT 3 & 3A ===== */
+                #     WHEN base.Kode_Shift IN ('3','3A','D2/3A','D2/3') THEN
+                #         CASE
+                #             WHEN TIME(base.Actual_Pulang) BETWEEN '05:00:00' AND '10:00:00'
+                #                 THEN 'Pulang Tepat Waktu'
+                #             ELSE 'Pulang Terlalu Cepat'
+                #         END
+
+                #     /* ===== DEFAULT ===== */
+                #     WHEN base.Actual_Pulang < DATE_SUB(base.Scheduled_End, INTERVAL 15 MINUTE)
+                #         THEN 'Pulang Terlalu Cepat'
+                #     WHEN base.Actual_Pulang BETWEEN
+                #         DATE_SUB(base.Scheduled_End, INTERVAL 15 MINUTE)
+                #         AND DATE_ADD(base.Scheduled_End, INTERVAL 15 MINUTE)
+                #         THEN 'Pulang Tepat Waktu'
+                #     ELSE 'Pulang Tepat Waktu'
+                # END AS Status_Pulang
+                
+                CASE
+                    WHEN base.Actual_Pulang IS NULL 
+                        THEN 'Tidak scan pulang'
+
+                    WHEN base.Actual_Pulang < base.Scheduled_End
+                        THEN 'Pulang Terlalu Cepat'
+
+                    ELSE 'Pulang Tepat Waktu'
+                END AS Status_Pulang
+
+
+
+            FROM (
+
+                SELECT
+                    jk.nama AS Nama,
+                    jk.tanggal AS Tanggal,
+                    jk.kode_shift AS Kode_Shift,
+                    si.jam_masuk AS Jadwal_Masuk,
+                    si.jam_pulang AS Jadwal_Pulang,
+
+                    k.jabatan AS Jabatan,
+                    k.dept AS Departemen,
+                    k.id_karyawan,
+                    k.nik,
+
+                    # CASE
+                    #     WHEN si.lintas_hari = 0 AND si.jam_masuk = '00:00:00'
+                    #         THEN CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 23:00:00') AS DATETIME)
+                    #     ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME)
+                    # END AS Scheduled_Start,
+                    
+                    CASE
+                        -- SHIFT 3A → masuk malam hari sebelumnya
+                        WHEN jk.kode_shift = '3A'
+                            THEN CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 23:00:00') AS DATETIME)
+
+                        -- shift lain normal
+                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME)
+                    END AS Scheduled_Start,
+
+
+                    # CASE
+                    #     WHEN si.lintas_hari = 1
+                    #         THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                    #     ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                    # END AS Scheduled_End,
+                    
+                    CASE
+                        -- KHUSUS 3A → selesai di hari yang sama
+                        WHEN jk.kode_shift = '3A'
+                            THEN CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+
+                        -- shift lintas hari lainnya
+                        WHEN si.lintas_hari = 1
+                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+
+                        ELSE
+                            CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                    END AS Scheduled_End,
+
+
+
+                    /* =====================
+                    ACTUAL MASUK - DENGAN LOGIC KHUSUS SHIFT 3A
+                    ===================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        
+                        -- LOGIC KHUSUS UNTUK SHIFT 3A (LINTAS HARI 00:00-08:00)
+                        WHEN jk.kode_shift IN ('3','3A')
+                        AND si.lintas_hari = 1
+                        THEN (
+
+                            SELECT MIN(k.tanggal_scan)
+                            FROM kehadiran_karyawan k
+                            WHERE k.nama = jk.nama
+
+                            AND (
+                                /* =====================================================
+                                MODE KHUSUS: HANYA AKTIF DI AWAL BULAN
+                                ===================================================== */
+                                (
+                                    DAY(jk.tanggal) = 1
+                                    AND
+                                    (
+                                        -- scan dini hari hari H
+                                        (
+                                            DATE(k.tanggal_scan) = jk.tanggal
+                                            AND TIME(k.tanggal_scan) BETWEEN '00:00:00' AND '05:00:00'
+                                        )
+                                        OR
+                                        -- scan malam H-1 (wajib ada jadwal H-1)
+                                        (
+                                            DATE(k.tanggal_scan) = DATE_SUB(jk.tanggal, INTERVAL 1 DAY)
+                                            AND TIME(k.tanggal_scan) BETWEEN '22:00:00' AND '23:59:59'
+                                            AND EXISTS (
+                                                SELECT 1
+                                                FROM jadwal_karyawan jp
+                                                WHERE jp.nama = jk.nama
+                                                AND jp.tanggal = DATE_SUB(jk.tanggal, INTERVAL 1 DAY)
+                                                AND jp.kode_shift IN ('3','3A')
+                                            )
+                                        )
+                                    )
+                                )
+
+                                OR
+
+                                /* =====================================================
+                                MODE NORMAL (HARI TENGAH BULAN)
+                                ===================================================== */
+                                (
+                                    DAY(jk.tanggal) <> 1
+                                    AND k.tanggal_scan BETWEEN
+                                        CAST(CONCAT(jk.tanggal, ' 20:00:00') AS DATETIME)
+                                        AND
+                                        CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 02:59:59') AS DATETIME)
+                                )
+                            )
+                            /* ============================================
+                            HARD BLOCK: cegah 23:xx nempel ke tanggal yg salah
+                            (hanya saat awal bulan)
+                            ============================================ */
+                            AND NOT (
+                                DAY(jk.tanggal) = 1
+                                AND DATE(k.tanggal_scan) = jk.tanggal
+                                AND TIME(k.tanggal_scan) >= '22:00:00'
+                            )
+                        )
+                        
+                        -- LOGIC DEFAULT UNTUK SHIFT LAINNYA (TETAP SEPERTI SEMULA)
+                        ELSE (
+                            SELECT MIN(k3.tanggal_scan)
+                            FROM kehadiran_karyawan k3
+                            WHERE k3.nama = jk.nama
+                            AND k3.tanggal_scan BETWEEN
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1 AND si.jam_masuk = '00:00:00'
+                                        THEN CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 18:00:00') AS DATETIME)
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                                END
+                            )
+                            AND
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1 AND si.jam_masuk = '00:00:00'
+                                        THEN CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 24 HOUR
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+                                END
+                            )
+                        )
+                    END AS Actual_Masuk,
+
+                    /* =====================
+                    ACTUAL PULANG - DENGAN LOGIC KHUSUS SHIFT 3A
+                    ===================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        
+                        -- LOGIC KHUSUS UNTUK SHIFT 3A (LINTAS HARI 00:00-08:00)
+                        /* ===== SHIFT 3A : hanya valid jika ada jadwal H-1 ===== */
+                        WHEN jk.kode_shift = '3A'
+                        AND si.lintas_hari = 1
+                        AND EXISTS (
+                            SELECT 1
+                            FROM jadwal_karyawan j_prev
+                            WHERE j_prev.nama = jk.nama
+                            AND j_prev.tanggal = DATE_SUB(jk.tanggal, INTERVAL 1 DAY)
+                            AND j_prev.kode_shift = '3A'
+                        )
+                        THEN (
+                            SELECT MAX(k.tanggal_scan)
+                            FROM kehadiran_karyawan k
+                            WHERE k.nama = jk.nama
+                            AND k.tanggal_scan BETWEEN
+                                CAST(CONCAT(jk.tanggal, ' 06:00:00') AS DATETIME)
+                                AND
+                                CAST(CONCAT(jk.tanggal, ' 11:00:00') AS DATETIME)
+                        )
+
+                        /* ===== SHIFT 3B CHECK-OUT (PAGI) ===== */
+                        WHEN jk.kode_shift = '3B' THEN (
+                            SELECT MAX(k.tanggal_scan)
+                            FROM kehadiran_karyawan k
+                            WHERE k.nama = jk.nama
+                            AND k.tanggal_scan BETWEEN
+                                CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 05:00:00') AS DATETIME)
+                                AND
+                                CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' 10:00:00') AS DATETIME)
+                        )
+                        
+                        -- LOGIC DEFAULT UNTUK SHIFT LAINNYA (TETAP SEPERTI SEMULA)
+                        ELSE (
+                            SELECT MAX(k4.tanggal_scan)
+                            FROM kehadiran_karyawan k4
+                            WHERE k4.nama = jk.nama
+                            AND k4.tanggal_scan BETWEEN
+                                (
+                                    CASE
+                                        WHEN si.lintas_hari = 1 AND si.jam_pulang = '00:00:00'
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) - INTERVAL 24 HOUR
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                                    END
+                                )
+                                AND
+                                (
+                                    CASE
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) + INTERVAL 2 HOUR
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) + INTERVAL 6 HOUR
+                                    END
+                                )
+                            AND DATE(k4.tanggal_scan) IN (
+                                DATE(jk.tanggal),
+                                DATE(
+                                    CASE
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                                    END
+                                )
+                            )
+                            AND k4.tanggal_scan > CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 1 HOUR
+                            AND k4.tanggal_scan >=
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1
+                                        THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                                            - INTERVAL 2 HOUR
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                                            - INTERVAL 2 HOUR
+                                END
+                            )
+                        )
+                    END AS Actual_Pulang
+
+
+                FROM jadwal_karyawan jk
+                LEFT JOIN shift_info si ON jk.kode_shift = si.kode
+                LEFT JOIN karyawan k ON jk.id_karyawan = k.id_karyawan
+
+                GROUP BY
+                    jk.nama, jk.tanggal, jk.kode_shift,
+                    si.jam_masuk, si.jam_pulang,
+                    k.jabatan, k.dept, k.id_karyawan, k.nik
+
+            ) AS base
+
+            LEFT JOIN informasi_jadwal ij ON ij.kode = base.Kode_Shift
+            ORDER BY base.Nama, base.Tanggal;
+            """
+
+
+            
+            # Gunakan query dengan perbaikan logika pulang
+            querysolvingstatus_pulang_bug_error = """
+            SELECT
+                base.Nama,
+                base.Tanggal,
+                base.Kode_Shift,
+                base.Jabatan,
+                base.Departemen,
+                base.id_karyawan,
+                base.NIK,
+                base.Jadwal_Masuk,
+                base.Jadwal_Pulang,
+                base.Actual_Masuk,
+                base.Actual_Pulang,
+
+                CASE
+                    WHEN base.Kode_Shift IN ('CT','CTT','EO','OF1','CTB','X')
+                        THEN ij.keterangan
+                    WHEN base.Actual_Masuk IS NULL AND base.Actual_Pulang IS NULL
+                        THEN 'Tidak Hadir'
+                    ELSE 'Hadir'
+                END AS Status_Kehadiran,
+
+                CASE
+                    WHEN base.Actual_Masuk IS NULL THEN 'Tidak scan masuk'
+                    WHEN base.Actual_Masuk <= base.Scheduled_Start THEN 'Masuk Tepat Waktu'
+                    ELSE 'Masuk Telat'
+                END AS Status_Masuk,
+
+                -- ===== STATUS PULANG (FIXED) =====
+                CASE
+                    WHEN base.Actual_Pulang IS NULL 
+                        THEN 'Tidak scan pulang'
+                    -- Pulang terlalu cepat (lebih dari 15 menit sebelum jadwal)
+                    WHEN base.Actual_Pulang < DATE_SUB(base.Scheduled_End, INTERVAL 15 MINUTE)
+                        THEN 'Pulang Terlalu Cepat'
+                    -- Pulang tepat waktu (dalam rentang -15 menit s/d +15 menit dari jadwal)
+                    WHEN base.Actual_Pulang BETWEEN 
+                            DATE_SUB(base.Scheduled_End, INTERVAL 15 MINUTE) 
+                            AND DATE_ADD(base.Scheduled_End, INTERVAL 15 MINUTE)
+                        THEN 'Pulang Tepat Waktu'
+                    -- Pulang telat (lebih dari 15 menit setelah jadwal)
+                    ELSE 'Pulang Tepat Waktu'
+                END AS Status_Pulang
+
+            FROM (
+
+                SELECT
+                    jk.nama AS Nama,
+                    jk.tanggal AS Tanggal,
+                    jk.kode_shift AS Kode_Shift,
+                    si.jam_masuk AS Jadwal_Masuk,
+                    si.jam_pulang AS Jadwal_Pulang,
+
+                    k.jabatan AS Jabatan,
+                    k.dept AS Departemen,
+                    k.id_karyawan,
+                    k.nik,
+
+                    CASE
+                        WHEN si.lintas_hari = 0 AND si.jam_masuk = '00:00:00'
+                            THEN CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 23:00:00') AS DATETIME)
+                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME)
+                    END AS Scheduled_Start,
+
+                    CASE
+                        WHEN si.lintas_hari = 1
+                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                    END AS Scheduled_End,
+
+
+                    /* =====================
+                    ACTUAL MASUK - DENGAN LOGIC KHUSUS SHIFT 3A
+                    ===================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        
+                        -- LOGIC KHUSUS UNTUK SHIFT 3A (LINTAS HARI 00:00-08:00)
+                        WHEN jk.kode_shift = '3A' AND si.lintas_hari = 1 AND si.jam_masuk = '00:00:00' THEN (
+                            SELECT MIN(k3.tanggal_scan)
+                            FROM kehadiran_karyawan k3
+                            WHERE k3.nama = jk.nama
+                            -- Filter tanggal: scan bisa di hari sebelumnya (jam 22:00+) atau hari jadwal (jam 00:00-05:00)
+                            AND (
+                                (DATE(k3.tanggal_scan) = DATE_SUB(jk.tanggal, INTERVAL 1 DAY) AND TIME(k3.tanggal_scan) >= '22:00:00')
+                                OR
+                                (DATE(k3.tanggal_scan) = jk.tanggal AND TIME(k3.tanggal_scan) <= '05:00:00')
+                            )
+                            -- Window waktu absolute
+                            AND k3.tanggal_scan BETWEEN
+                                CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 22:00:00') AS DATETIME)
+                                AND
+                                CAST(CONCAT(jk.tanggal, ' 05:00:00') AS DATETIME)
+                            -- ANTI-DUPLIKASI: scan ini tidak boleh sudah dipakai sebagai pulang di jadwal sebelumnya
+                            AND NOT EXISTS (
+                                SELECT 1 
+                                FROM jadwal_karyawan jk_prev
+                                LEFT JOIN shift_info si_prev ON jk_prev.kode_shift = si_prev.kode
+                                WHERE jk_prev.nama = jk.nama
+                                AND jk_prev.tanggal < jk.tanggal
+                                AND jk_prev.kode_shift NOT IN ('CT','CTT','EO','OF1','CTB','X')
+                                -- Cek apakah scan ini masuk window pulang jadwal sebelumnya
+                                AND k3.tanggal_scan BETWEEN
+                                    CAST(CONCAT(jk_prev.tanggal, ' 06:00:00') AS DATETIME)
+                                    AND
+                                    CAST(CONCAT(jk_prev.tanggal, ' 12:00:00') AS DATETIME)
+                                AND DATE(k3.tanggal_scan) = jk_prev.tanggal
+                            )
+                        )
+                        
+                        -- LOGIC DEFAULT UNTUK SHIFT LAINNYA (TETAP SEPERTI SEMULA)
+                        ELSE (
+                            SELECT MIN(k3.tanggal_scan)
+                            FROM kehadiran_karyawan k3
+                            WHERE k3.nama = jk.nama
+                            AND k3.tanggal_scan BETWEEN
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1 AND si.jam_masuk = '00:00:00'
+                                        THEN CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 18:00:00') AS DATETIME)
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                                END
+                            )
+                            AND
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1 AND si.jam_masuk = '00:00:00'
+                                        THEN CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 24 HOUR
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+                                END
+                            )
+                        )
+                    END AS Actual_Masuk,
+
+                    /* =====================
+                    ACTUAL PULANG - DENGAN LOGIC KHUSUS SHIFT 3A
+                    ===================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        
+                        -- LOGIC KHUSUS UNTUK SHIFT 3A (LINTAS HARI 00:00-08:00)
+                        WHEN jk.kode_shift = '3A' AND si.lintas_hari = 1 AND si.jam_masuk = '00:00:00' THEN (
+                            SELECT MAX(k4.tanggal_scan)
+                            FROM kehadiran_karyawan k4
+                            WHERE k4.nama = jk.nama
+                            -- PENTING: Tanggal scan HARUS sama dengan tanggal jadwal
+                            AND DATE(k4.tanggal_scan) = jk.tanggal
+                            -- Window waktu: jam 06:00 - 11:00 di hari jadwal
+                            AND TIME(k4.tanggal_scan) BETWEEN '06:00:00' AND '11:00:00'
+                            AND k4.tanggal_scan BETWEEN
+                                CAST(CONCAT(jk.tanggal, ' 06:00:00') AS DATETIME)
+                                AND
+                                CAST(CONCAT(jk.tanggal, ' 11:00:00') AS DATETIME)
+                            -- ANTI-DUPLIKASI: scan pulang tidak boleh dipakai sebagai masuk di jadwal berikutnya
+                            AND NOT EXISTS (
+                                SELECT 1 
+                                FROM jadwal_karyawan jk_next
+                                LEFT JOIN shift_info si_next ON jk_next.kode_shift = si_next.kode
+                                WHERE jk_next.nama = jk.nama
+                                AND jk_next.tanggal > jk.tanggal
+                                AND jk_next.kode_shift NOT IN ('CT','CTT','EO','OF1','CTB','X')
+                                -- Cek apakah scan ini masuk window masuk jadwal berikutnya
+                                AND (
+                                    (DATE(k4.tanggal_scan) = DATE_SUB(jk_next.tanggal, INTERVAL 1 DAY) AND TIME(k4.tanggal_scan) >= '22:00:00')
+                                    OR
+                                    (DATE(k4.tanggal_scan) = jk_next.tanggal AND TIME(k4.tanggal_scan) <= '05:00:00')
+                                )
+                            )
+                            -- Scan pulang harus lebih besar dari scan masuk (jika scan masuk ada)
+                            AND k4.tanggal_scan > COALESCE(
+                                (
+                                    SELECT MIN(k5.tanggal_scan)
+                                    FROM kehadiran_karyawan k5
+                                    WHERE k5.nama = jk.nama
+                                    AND (
+                                        (DATE(k5.tanggal_scan) = DATE_SUB(jk.tanggal, INTERVAL 1 DAY) AND TIME(k5.tanggal_scan) >= '22:00:00')
+                                        OR
+                                        (DATE(k5.tanggal_scan) = jk.tanggal AND TIME(k5.tanggal_scan) <= '05:00:00')
+                                    )
+                                    AND k5.tanggal_scan BETWEEN
+                                        CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 22:00:00') AS DATETIME)
+                                        AND
+                                        CAST(CONCAT(jk.tanggal, ' 05:00:00') AS DATETIME)
+                                ),
+                                CAST('1970-01-01 00:00:00' AS DATETIME)  -- Default jika scan masuk NULL
+                            )
+                        )
+                        
+                        -- LOGIC DEFAULT UNTUK SHIFT LAINNYA (TETAP SEPERTI SEMULA)
+                        ELSE (
+                            SELECT MAX(k4.tanggal_scan)
+                            FROM kehadiran_karyawan k4
+                            WHERE k4.nama = jk.nama
+                            AND k4.tanggal_scan BETWEEN
+                                (
+                                    CASE
+                                        WHEN si.lintas_hari = 1 AND si.jam_pulang = '00:00:00'
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) - INTERVAL 24 HOUR
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                                    END
+                                )
+                                AND
+                                (
+                                    CASE
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) + INTERVAL 2 HOUR
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) + INTERVAL 6 HOUR
+                                    END
+                                )
+                            AND DATE(k4.tanggal_scan) IN (
+                                DATE(jk.tanggal),
+                                DATE(
+                                    CASE
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                                    END
+                                )
+                            )
+                            AND k4.tanggal_scan > CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 1 HOUR
+                            AND k4.tanggal_scan >=
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1
+                                        THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                                            - INTERVAL 2 HOUR
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                                            - INTERVAL 2 HOUR
+                                END
+                            )
+                        )
+                    END AS Actual_Pulang
+
+
+                FROM jadwal_karyawan jk
+                LEFT JOIN shift_info si ON jk.kode_shift = si.kode
+                LEFT JOIN karyawan k ON jk.id_karyawan = k.id_karyawan
+
+                GROUP BY
+                    jk.nama, jk.tanggal, jk.kode_shift,
+                    si.jam_masuk, si.jam_pulang,
+                    k.jabatan, k.dept, k.id_karyawan, k.nik
+
+            ) AS base
+
+            LEFT JOIN informasi_jadwal ij ON ij.kode = base.Kode_Shift
+            ORDER BY base.Nama, base.Tanggal;
+            """
+            
+            # Data sudah ada, namu status pulang dan masuk nya error bug           
+            querydefaultstatuspulang = """
+            SELECT
+                base.Nama,
+                base.Tanggal,
+                base.Kode_Shift,
+                base.Jabatan,
+                base.Departemen,
+                base.id_karyawan,
+                base.NIK,
+                base.Jadwal_Masuk,
+                base.Jadwal_Pulang,
+                base.Actual_Masuk,
+                base.Actual_Pulang,
+
+                CASE
+                    WHEN base.Kode_Shift IN ('CT','CTT','EO','OF1','CTB','X')
+                        THEN ij.keterangan
+                    WHEN base.Actual_Masuk IS NULL AND base.Actual_Pulang IS NULL
+                        THEN 'Tidak Hadir'
+                    ELSE 'Hadir'
+                END AS Status_Kehadiran,
+
+                CASE
+                    WHEN base.Actual_Masuk IS NULL THEN 'Tidak scan masuk'
+                    WHEN base.Actual_Masuk <= base.Scheduled_Start THEN 'Masuk Tepat Waktu'
+                    ELSE 'Masuk Telat'
+                END AS Status_Masuk,
+
+                CASE
+                    WHEN base.Actual_Pulang IS NULL THEN 'Tidak scan pulang'
+                    WHEN base.Actual_Pulang >= base.Scheduled_End THEN 'Pulang Tepat Waktu'
+                    ELSE 'Pulang Terlalu Cepat'
+                END AS Status_Pulang
+
+            FROM (
+
+                SELECT
+                    jk.nama AS Nama,
+                    jk.tanggal AS Tanggal,
+                    jk.kode_shift AS Kode_Shift,
+                    si.jam_masuk AS Jadwal_Masuk,
+                    si.jam_pulang AS Jadwal_Pulang,
+
+                    k.jabatan AS Jabatan,
+                    k.dept AS Departemen,
+                    k.id_karyawan,
+                    k.nik,
+
+                    CASE
+                        WHEN si.lintas_hari = 0 AND si.jam_masuk = '00:00:00'
+                            THEN CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 23:00:00') AS DATETIME)
+                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME)
+                    END AS Scheduled_Start,
+
+                    CASE
+                        WHEN si.lintas_hari = 1
+                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                    END AS Scheduled_End,
+
+
+                    /* =====================
+                    ACTUAL MASUK - DENGAN LOGIC KHUSUS SHIFT 3A
+                    ===================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        
+                        -- LOGIC KHUSUS UNTUK SHIFT 3A (LINTAS HARI 00:00-08:00)
+                        WHEN jk.kode_shift = '3A' AND si.lintas_hari = 1 AND si.jam_masuk = '00:00:00' THEN (
+                            SELECT MIN(k3.tanggal_scan)
+                            FROM kehadiran_karyawan k3
+                            WHERE k3.nama = jk.nama
+                            -- Filter tanggal: scan bisa di hari sebelumnya (jam 22:00+) atau hari jadwal (jam 00:00-05:00)
+                            AND (
+                                (DATE(k3.tanggal_scan) = DATE_SUB(jk.tanggal, INTERVAL 1 DAY) AND TIME(k3.tanggal_scan) >= '22:00:00')
+                                OR
+                                (DATE(k3.tanggal_scan) = jk.tanggal AND TIME(k3.tanggal_scan) <= '05:00:00')
+                            )
+                            -- Window waktu absolute
+                            AND k3.tanggal_scan BETWEEN
+                                CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 22:00:00') AS DATETIME)
+                                AND
+                                CAST(CONCAT(jk.tanggal, ' 05:00:00') AS DATETIME)
+                            -- ANTI-DUPLIKASI: scan ini tidak boleh sudah dipakai sebagai pulang di jadwal sebelumnya
+                            AND NOT EXISTS (
+                                SELECT 1 
+                                FROM jadwal_karyawan jk_prev
+                                LEFT JOIN shift_info si_prev ON jk_prev.kode_shift = si_prev.kode
+                                WHERE jk_prev.nama = jk.nama
+                                AND jk_prev.tanggal < jk.tanggal
+                                AND jk_prev.kode_shift NOT IN ('CT','CTT','EO','OF1','CTB','X')
+                                -- Cek apakah scan ini masuk window pulang jadwal sebelumnya
+                                AND k3.tanggal_scan BETWEEN
+                                    CAST(CONCAT(jk_prev.tanggal, ' 06:00:00') AS DATETIME)
+                                    AND
+                                    CAST(CONCAT(jk_prev.tanggal, ' 12:00:00') AS DATETIME)
+                                AND DATE(k3.tanggal_scan) = jk_prev.tanggal
+                            )
+                        )
+                        
+                        -- LOGIC DEFAULT UNTUK SHIFT LAINNYA (TETAP SEPERTI SEMULA)
+                        ELSE (
+                            SELECT MIN(k3.tanggal_scan)
+                            FROM kehadiran_karyawan k3
+                            WHERE k3.nama = jk.nama
+                            AND k3.tanggal_scan BETWEEN
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1 AND si.jam_masuk = '00:00:00'
+                                        THEN CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 18:00:00') AS DATETIME)
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                                END
+                            )
+                            AND
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1 AND si.jam_masuk = '00:00:00'
+                                        THEN CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 24 HOUR
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+                                END
+                            )
+                        )
+                    END AS Actual_Masuk,
+
+                    /* =====================
+                    ACTUAL PULANG - DENGAN LOGIC KHUSUS SHIFT 3A
+                    ===================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        
+                        -- LOGIC KHUSUS UNTUK SHIFT 3A (LINTAS HARI 00:00-08:00)
+                        WHEN jk.kode_shift = '3A' AND si.lintas_hari = 1 AND si.jam_masuk = '00:00:00' THEN (
+                            SELECT MAX(k4.tanggal_scan)
+                            FROM kehadiran_karyawan k4
+                            WHERE k4.nama = jk.nama
+                            -- PENTING: Tanggal scan HARUS sama dengan tanggal jadwal
+                            AND DATE(k4.tanggal_scan) = jk.tanggal
+                            -- Window waktu: jam 06:00 - 11:00 di hari jadwal
+                            AND TIME(k4.tanggal_scan) BETWEEN '06:00:00' AND '11:00:00'
+                            AND k4.tanggal_scan BETWEEN
+                                CAST(CONCAT(jk.tanggal, ' 06:00:00') AS DATETIME)
+                                AND
+                                CAST(CONCAT(jk.tanggal, ' 11:00:00') AS DATETIME)
+                            -- ANTI-DUPLIKASI: scan pulang tidak boleh dipakai sebagai masuk di jadwal berikutnya
+                            AND NOT EXISTS (
+                                SELECT 1 
+                                FROM jadwal_karyawan jk_next
+                                LEFT JOIN shift_info si_next ON jk_next.kode_shift = si_next.kode
+                                WHERE jk_next.nama = jk.nama
+                                AND jk_next.tanggal > jk.tanggal
+                                AND jk_next.kode_shift NOT IN ('CT','CTT','EO','OF1','CTB','X')
+                                -- Cek apakah scan ini masuk window masuk jadwal berikutnya
+                                AND (
+                                    (DATE(k4.tanggal_scan) = DATE_SUB(jk_next.tanggal, INTERVAL 1 DAY) AND TIME(k4.tanggal_scan) >= '22:00:00')
+                                    OR
+                                    (DATE(k4.tanggal_scan) = jk_next.tanggal AND TIME(k4.tanggal_scan) <= '05:00:00')
+                                )
+                            )
+                            -- Scan pulang harus lebih besar dari scan masuk (jika scan masuk ada)
+                            AND k4.tanggal_scan > COALESCE(
+                                (
+                                    SELECT MIN(k5.tanggal_scan)
+                                    FROM kehadiran_karyawan k5
+                                    WHERE k5.nama = jk.nama
+                                    AND (
+                                        (DATE(k5.tanggal_scan) = DATE_SUB(jk.tanggal, INTERVAL 1 DAY) AND TIME(k5.tanggal_scan) >= '22:00:00')
+                                        OR
+                                        (DATE(k5.tanggal_scan) = jk.tanggal AND TIME(k5.tanggal_scan) <= '05:00:00')
+                                    )
+                                    AND k5.tanggal_scan BETWEEN
+                                        CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 22:00:00') AS DATETIME)
+                                        AND
+                                        CAST(CONCAT(jk.tanggal, ' 05:00:00') AS DATETIME)
+                                ),
+                                CAST('1970-01-01 00:00:00' AS DATETIME)  -- Default jika scan masuk NULL
+                            )
+                        )
+                        
+                        -- LOGIC DEFAULT UNTUK SHIFT LAINNYA (TETAP SEPERTI SEMULA)
+                        ELSE (
+                            SELECT MAX(k4.tanggal_scan)
+                            FROM kehadiran_karyawan k4
+                            WHERE k4.nama = jk.nama
+                            AND k4.tanggal_scan BETWEEN
+                                (
+                                    CASE
+                                        WHEN si.lintas_hari = 1 AND si.jam_pulang = '00:00:00'
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) - INTERVAL 24 HOUR
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                                    END
+                                )
+                                AND
+                                (
+                                    CASE
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) + INTERVAL 2 HOUR
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) + INTERVAL 6 HOUR
+                                    END
+                                )
+                            AND DATE(k4.tanggal_scan) IN (
+                                DATE(jk.tanggal),
+                                DATE(
+                                    CASE
+                                        WHEN si.lintas_hari = 1
+                                            THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                                        ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                                    END
+                                )
+                            )
+                            AND k4.tanggal_scan > CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 1 HOUR
+                            AND k4.tanggal_scan >=
+                            (
+                                CASE
+                                    WHEN si.lintas_hari = 1
+                                        THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+                                            - INTERVAL 2 HOUR
+                                    ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+                                            - INTERVAL 2 HOUR
+                                END
+                            )
+                        )
+                    END AS Actual_Pulang
+
+
+                FROM jadwal_karyawan jk
+                LEFT JOIN shift_info si ON jk.kode_shift = si.kode
+                LEFT JOIN karyawan k ON jk.id_karyawan = k.id_karyawan
+
+                GROUP BY
+                    jk.nama, jk.tanggal, jk.kode_shift,
+                    si.jam_masuk, si.jam_pulang,
+                    k.jabatan, k.dept, k.id_karyawan, k.nik
+
+            ) AS base
+
+            LEFT JOIN informasi_jadwal ij ON ij.kode = base.Kode_Shift
+            ORDER BY base.Nama, base.Tanggal;
+            """
+            
+            # query = """
+            # SELECT
+            #     base.Nama,
+            #     base.Tanggal,
+            #     base.Kode_Shift,
+            #     base.Jabatan,
+            #     base.Departemen,
+            #     base.id_karyawan,
+            #     base.NIK,
+            #     base.Jadwal_Masuk,
+            #     base.Jadwal_Pulang,
+            #     base.Actual_Masuk,
+            #     base.Actual_Pulang,
+
+            #     -- Status Kehadiran (tidak berubah)
+            #     CASE
+            #         WHEN base.Kode_Shift IN ('CT','CTT','EO','OF1','CTB','X')
+            #             THEN ij.keterangan
+            #         WHEN base.Actual_Masuk IS NULL AND base.Actual_Pulang IS NULL
+            #             THEN 'Tidak Hadir'
+            #         ELSE 'Hadir'
+            #     END AS Status_Kehadiran,
+
+            #     -- ===== STATUS MASUK (FIXED) =====
+            #     CASE
+            #         WHEN base.Actual_Masuk IS NULL 
+            #             THEN 'Tidak scan masuk'
+            #         WHEN base.Actual_Masuk <= base.Scheduled_Start 
+            #             THEN 'Masuk Tepat Waktu'
+            #         WHEN base.Actual_Masuk <= DATE_ADD(base.Scheduled_Start, INTERVAL 15 MINUTE)
+            #             THEN 'Masuk Telat'
+            #         ELSE 'Masuk Telat'
+            #     END AS Status_Masuk,
+
+            #     -- ===== STATUS PULANG (FIXED) =====
+            #     CASE
+            #         WHEN base.Actual_Pulang IS NULL 
+            #             THEN 'Tidak scan pulang'
+            #         -- Pulang terlalu cepat (lebih dari 15 menit sebelum jadwal)
+            #         WHEN base.Actual_Pulang < DATE_SUB(base.Scheduled_End, INTERVAL 15 MINUTE)
+            #             THEN 'Pulang Terlalu Cepat'
+            #         -- Pulang tepat waktu (dalam rentang -15 menit s/d +15 menit dari jadwal)
+            #         WHEN base.Actual_Pulang BETWEEN 
+            #                 DATE_SUB(base.Scheduled_End, INTERVAL 15 MINUTE) 
+            #                 AND DATE_ADD(base.Scheduled_End, INTERVAL 15 MINUTE)
+            #             THEN 'Pulang Tepat Waktu'
+            #         -- Pulang telat (lebih dari 15 menit setelah jadwal)
+            #         ELSE 'Pulang Tepat Waktu'
+            #     END AS Status_Pulang
+
+            # FROM (
+
+            #     SELECT
+            #         jk.nama AS Nama,
+            #         jk.tanggal AS Tanggal,
+            #         jk.kode_shift AS Kode_Shift,
+            #         si.jam_masuk AS Jadwal_Masuk,
+            #         si.jam_pulang AS Jadwal_Pulang,
+
+            #         k.jabatan AS Jabatan,
+            #         k.dept AS Departemen,
+            #         k.id_karyawan,
+            #         k.nik,
+
+            #         -- ===== SCHEDULED START (TIDAK BERUBAH) =====
+            #         CASE
+            #             WHEN si.lintas_hari = 0 AND si.jam_masuk = '00:00:00'
+            #                 THEN CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 23:00:00') AS DATETIME)
+            #             ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME)
+            #         END AS Scheduled_Start,
+
+            #         -- ===== SCHEDULED END (FIXED!) =====
+            #         -- Khusus shift 3A (00:00-08:00): Pulang di hari yang sama, BUKAN hari berikutnya!
+            #         CASE
+            #             WHEN jk.kode_shift = '3A' AND si.jam_masuk = '00:00:00' AND si.jam_pulang = '08:00:00'
+            #                 THEN CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+            #             WHEN si.lintas_hari = 1
+            #                 THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+            #             ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+            #         END AS Scheduled_End,
+
+            #         /* =====================
+            #         ACTUAL MASUK - LOGIC TETAP SAMA
+            #         ===================== */
+            #         CASE
+            #             WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        
+            #             -- LOGIC KHUSUS UNTUK SHIFT 3A
+            #             WHEN jk.kode_shift = '3A' AND si.lintas_hari = 1 AND si.jam_masuk = '00:00:00' THEN (
+            #                 SELECT MIN(k3.tanggal_scan)
+            #                 FROM kehadiran_karyawan k3
+            #                 WHERE k3.nama = jk.nama
+            #                 AND (
+            #                     (DATE(k3.tanggal_scan) = DATE_SUB(jk.tanggal, INTERVAL 1 DAY) AND TIME(k3.tanggal_scan) >= '22:00:00')
+            #                     OR
+            #                     (DATE(k3.tanggal_scan) = jk.tanggal AND TIME(k3.tanggal_scan) <= '05:00:00')
+            #                 )
+            #                 AND k3.tanggal_scan BETWEEN
+            #                     CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 22:00:00') AS DATETIME)
+            #                     AND
+            #                     CAST(CONCAT(jk.tanggal, ' 05:00:00') AS DATETIME)
+            #                 AND NOT EXISTS (
+            #                     SELECT 1 
+            #                     FROM jadwal_karyawan jk_prev
+            #                     LEFT JOIN shift_info si_prev ON jk_prev.kode_shift = si_prev.kode
+            #                     WHERE jk_prev.nama = jk.nama
+            #                     AND jk_prev.tanggal < jk.tanggal
+            #                     AND jk_prev.kode_shift NOT IN ('CT','CTT','EO','OF1','CTB','X')
+            #                     AND k3.tanggal_scan BETWEEN
+            #                         CAST(CONCAT(jk_prev.tanggal, ' 06:00:00') AS DATETIME)
+            #                         AND
+            #                         CAST(CONCAT(jk_prev.tanggal, ' 12:00:00') AS DATETIME)
+            #                     AND DATE(k3.tanggal_scan) = jk_prev.tanggal
+            #                 )
+            #             )
+                        
+            #             -- LOGIC DEFAULT UNTUK SHIFT LAINNYA
+            #             ELSE (
+            #                 SELECT MIN(k3.tanggal_scan)
+            #                 FROM kehadiran_karyawan k3
+            #                 WHERE k3.nama = jk.nama
+            #                 AND k3.tanggal_scan BETWEEN
+            #                 (
+            #                     CASE
+            #                         WHEN si.lintas_hari = 1 AND si.jam_masuk = '00:00:00'
+            #                             THEN CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 18:00:00') AS DATETIME)
+            #                         ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+            #                     END
+            #                 )
+            #                 AND
+            #                 (
+            #                     CASE
+            #                         WHEN si.lintas_hari = 1 AND si.jam_masuk = '00:00:00'
+            #                             THEN CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 24 HOUR
+            #                         ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+            #                     END
+            #                 )
+            #             )
+            #         END AS Actual_Masuk,
+
+            #         /* =====================
+            #         ACTUAL PULANG - LOGIC TETAP SAMA
+            #         ===================== */
+            #         CASE
+            #             WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        
+            #             -- LOGIC KHUSUS UNTUK SHIFT 3A
+            #             WHEN jk.kode_shift = '3A' AND si.lintas_hari = 1 AND si.jam_masuk = '00:00:00' THEN (
+            #                 SELECT MAX(k4.tanggal_scan)
+            #                 FROM kehadiran_karyawan k4
+            #                 WHERE k4.nama = jk.nama
+            #                 AND DATE(k4.tanggal_scan) = jk.tanggal
+            #                 AND TIME(k4.tanggal_scan) BETWEEN '06:00:00' AND '11:00:00'
+            #                 AND k4.tanggal_scan BETWEEN
+            #                     CAST(CONCAT(jk.tanggal, ' 06:00:00') AS DATETIME)
+            #                     AND
+            #                     CAST(CONCAT(jk.tanggal, ' 11:00:00') AS DATETIME)
+            #                 AND NOT EXISTS (
+            #                     SELECT 1 
+            #                     FROM jadwal_karyawan jk_next
+            #                     LEFT JOIN shift_info si_next ON jk_next.kode_shift = si_next.kode
+            #                     WHERE jk_next.nama = jk.nama
+            #                     AND jk_next.tanggal > jk.tanggal
+            #                     AND jk_next.kode_shift NOT IN ('CT','CTT','EO','OF1','CTB','X')
+            #                     AND (
+            #                         (DATE(k4.tanggal_scan) = DATE_SUB(jk_next.tanggal, INTERVAL 1 DAY) AND TIME(k4.tanggal_scan) >= '22:00:00')
+            #                         OR
+            #                         (DATE(k4.tanggal_scan) = jk_next.tanggal AND TIME(k4.tanggal_scan) <= '05:00:00')
+            #                     )
+            #                 )
+            #                 AND k4.tanggal_scan > COALESCE(
+            #                     (
+            #                         SELECT MIN(k5.tanggal_scan)
+            #                         FROM kehadiran_karyawan k5
+            #                         WHERE k5.nama = jk.nama
+            #                         AND (
+            #                             (DATE(k5.tanggal_scan) = DATE_SUB(jk.tanggal, INTERVAL 1 DAY) AND TIME(k5.tanggal_scan) >= '22:00:00')
+            #                             OR
+            #                             (DATE(k5.tanggal_scan) = jk.tanggal AND TIME(k5.tanggal_scan) <= '05:00:00')
+            #                         )
+            #                         AND k5.tanggal_scan BETWEEN
+            #                             CAST(CONCAT(DATE_SUB(jk.tanggal, INTERVAL 1 DAY), ' 22:00:00') AS DATETIME)
+            #                             AND
+            #                             CAST(CONCAT(jk.tanggal, ' 05:00:00') AS DATETIME)
+            #                     ),
+            #                     CAST('1970-01-01 00:00:00' AS DATETIME)
+            #                 )
+            #             )
+                        
+            #             -- LOGIC DEFAULT UNTUK SHIFT LAINNYA
+            #             ELSE (
+            #                 SELECT MAX(k4.tanggal_scan)
+            #                 FROM kehadiran_karyawan k4
+            #                 WHERE k4.nama = jk.nama
+            #                 AND k4.tanggal_scan BETWEEN
+            #                     (
+            #                         CASE
+            #                             WHEN si.lintas_hari = 1 AND si.jam_pulang = '00:00:00'
+            #                                 THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) - INTERVAL 24 HOUR
+            #                             WHEN si.lintas_hari = 1
+            #                                 THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+            #                             ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+            #                         END
+            #                     )
+            #                     AND
+            #                     (
+            #                         CASE
+            #                             WHEN si.lintas_hari = 1
+            #                                 THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME) + INTERVAL 2 HOUR
+            #                             ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME) + INTERVAL 6 HOUR
+            #                         END
+            #                     )
+            #                 AND DATE(k4.tanggal_scan) IN (
+            #                     DATE(jk.tanggal),
+            #                     DATE(
+            #                         CASE
+            #                             WHEN si.lintas_hari = 1
+            #                                 THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+            #                             ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+            #                         END
+            #                     )
+            #                 )
+            #                 AND k4.tanggal_scan > CAST(CONCAT(jk.tanggal, ' ', si.jam_masuk) AS DATETIME) + INTERVAL 1 HOUR
+            #                 AND k4.tanggal_scan >=
+            #                 (
+            #                     CASE
+            #                         WHEN si.lintas_hari = 1
+            #                             THEN CAST(CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', si.jam_pulang) AS DATETIME)
+            #                                 - INTERVAL 2 HOUR
+            #                         ELSE CAST(CONCAT(jk.tanggal, ' ', si.jam_pulang) AS DATETIME)
+            #                                 - INTERVAL 2 HOUR
+            #                     END
+            #                 )
+            #             )
+            #         END AS Actual_Pulang
+
+            #     FROM jadwal_karyawan jk
+            #     LEFT JOIN shift_info si ON jk.kode_shift = si.kode
+            #     LEFT JOIN karyawan k ON jk.id_karyawan = k.id_karyawan
+
+            #     GROUP BY
+            #         jk.nama, jk.tanggal, jk.kode_shift,
+            #         si.jam_masuk, si.jam_pulang,
+            #         k.jabatan, k.dept, k.id_karyawan, k.nik
+
+            # ) AS base
+
+            # LEFT JOIN informasi_jadwal ij ON ij.kode = base.Kode_Shift
+            # ORDER BY base.Nama, base.Tanggal;
+            # """
+
+            cur.execute(query)
+            rows = cur.fetchall()
+
+            inserted_count = 0
+            skipped_count = 0
+
+            # 🔥 OPTIMIZATION 2: Batch insert dengan bulk insert
+            batch_data = []
+            batch_size = 100
+
+            for row in rows:
+                batch_data.append((
+                    row["Nama"],
+                    row["Tanggal"],
+                    row["Kode_Shift"],
+                    row["Jabatan"],
+                    row["Departemen"],
+                    row["id_karyawan"],
+                    row["NIK"],
+                    row["Jadwal_Masuk"],
+                    row["Jadwal_Pulang"],
+                    row["Actual_Masuk"],
+                    row["Actual_Pulang"],
+                    row["Status_Kehadiran"],
+                    row["Status_Masuk"],
+                    row["Status_Pulang"],
+                ))
+                if cur.rowcount == 1:
+                    inserted_count += 1
+                elif cur.rowcount == 2:
+                    updated_count += 1
+
+
+                # Insert dalam batch
+                if len(batch_data) >= batch_size:
+                    upsert_sql = """
+                        INSERT INTO croscek (
+                            Nama, Tanggal, Kode_Shift,
+                            Jabatan, Departemen,
+                            id_karyawan, NIK,
+                            Jadwal_Masuk, Jadwal_Pulang,
+                            Actual_Masuk, Actual_Pulang,
+                            Status_Kehadiran, Status_Masuk, Status_Pulang
+                        ) VALUES (%s,%s,%s,%s,%s,
+                                %s,%s,
+                                %s,%s,
+                                %s,%s,
+                                %s,%s,%s)
+                        ON DUPLICATE KEY UPDATE
+                            Kode_Shift = VALUES(Kode_Shift),
+                            Jabatan = VALUES(Jabatan),
+                            Departemen = VALUES(Departemen),
+                            id_karyawan = VALUES(id_karyawan),
+                            NIK = VALUES(NIK),
+                            Jadwal_Masuk = VALUES(Jadwal_Masuk),
+                            Jadwal_Pulang = VALUES(Jadwal_Pulang),
+                            Actual_Masuk = VALUES(Actual_Masuk),
+                            Actual_Pulang = VALUES(Actual_Pulang),
+                            Status_Kehadiran = VALUES(Status_Kehadiran),
+                            Status_Masuk = VALUES(Status_Masuk),
+                            Status_Pulang = VALUES(Status_Pulang)
+                        """
+
+                    for data in batch_data:
+                        cur.execute(upsert_sql, data)
+
+                    conn.commit()
+                    batch_data = []
+
+            # Insert sisa data
+            if batch_data:
+                upsert_sql = """
+                    INSERT INTO croscek (
+                        Nama, Tanggal, Kode_Shift,
+                        Jabatan, Departemen,
+                        id_karyawan, NIK,
+                        Jadwal_Masuk, Jadwal_Pulang,
+                        Actual_Masuk, Actual_Pulang,
+                        Status_Kehadiran, Status_Masuk, Status_Pulang
+                    ) VALUES (%s,%s,%s,%s,%s,
+                            %s,%s,
+                            %s,%s,
+                            %s,%s,
+                            %s,%s,%s)
+                    ON DUPLICATE KEY UPDATE
+                        Kode_Shift = VALUES(Kode_Shift),
+                        Jabatan = VALUES(Jabatan),
+                        Departemen = VALUES(Departemen),
+                        id_karyawan = VALUES(id_karyawan),
+                        NIK = VALUES(NIK),
+                        Jadwal_Masuk = VALUES(Jadwal_Masuk),
+                        Jadwal_Pulang = VALUES(Jadwal_Pulang),
+                        Actual_Masuk = VALUES(Actual_Masuk),
+                        Actual_Pulang = VALUES(Actual_Pulang),
+                        Status_Kehadiran = VALUES(Status_Kehadiran),
+                        Status_Masuk = VALUES(Status_Masuk),
+                        Status_Pulang = VALUES(Status_Pulang)
+                    """
+
+                for data in batch_data:
+                    cur.execute(upsert_sql, data)
+                
+                conn.commit()
+
+            # Fetch data terbaru dari tabel croscek
+            cur.execute("""
+                SELECT
+                    Nama,
+                    Tanggal,
+                    Kode_Shift,
+                    Jabatan,
+                    Departemen,
+                    id_karyawan,
+                    NIK,
+                    Jadwal_Masuk,
+                    Jadwal_Pulang,
+                    Actual_Masuk,
+                    Actual_Pulang,
+                    Status_Kehadiran,
+                    Status_Masuk,
+                    Status_Pulang
+                FROM croscek
+                ORDER BY Nama, Tanggal
+            """)
+            
+            result_rows = cur.fetchall()
+
+            # Convert TIME/DATE fields to strings
+            for row in result_rows:
+                if row['Jadwal_Masuk'] is not None:
+                    row['Jadwal_Masuk'] = str(row['Jadwal_Masuk'])
+                if row['Jadwal_Pulang'] is not None:
+                    row['Jadwal_Pulang'] = str(row['Jadwal_Pulang'])
+                if row['Actual_Masuk'] is not None:
+                    row['Actual_Masuk'] = str(row['Actual_Masuk'])
+                if row['Actual_Pulang'] is not None:
+                    row['Actual_Pulang'] = str(row['Actual_Pulang'])
+                if isinstance(row['Tanggal'], date):
+                    row['Tanggal'] = str(row['Tanggal'])
+
+            cur.close()
+            conn.close()
+
+            return jsonify({
+                "data": result_rows,
+                "summary": {
+                    "total": len(rows),
+                    "inserted": inserted_count,
+                    "skipped": skipped_count,
+                    "from_cache": False
+                }
+            })
+        except Exception as e:
+            print("ERROR CROSCEK:", e)
+            return jsonify({"error": str(e)}), 500
+        
+    # ======================
+    # SIMPAN / UPDATE DATA
+    # ======================
+    if request.method == "POST":
+        try:
+            data = request.json
+            if not data:
+                return jsonify({"error": "Payload kosong"}), 400
+
+            insert_sql = """
+            INSERT INTO croscek (
+                Nama, Tanggal, Kode_Shift, Jabatan, Departemen,
+                id_karyawan, NIK,
+                Jadwal_Masuk, Jadwal_Pulang,
+                Actual_Masuk, Actual_Pulang,
+                Status_Kehadiran, Status_Masuk, Status_Pulang
+            ) VALUES (
+                %s,%s,%s,%s,%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,%s
+            )
+            ON DUPLICATE KEY UPDATE
+                Kode_Shift       = VALUES(Kode_Shift),
+                Jabatan          = VALUES(Jabatan),
+                Departemen       = VALUES(Departemen),
+                Jadwal_Masuk     = VALUES(Jadwal_Masuk),
+                Jadwal_Pulang    = VALUES(Jadwal_Pulang),
+                Actual_Masuk     = VALUES(Actual_Masuk),
+                Actual_Pulang    = VALUES(Actual_Pulang),
+                Status_Kehadiran = VALUES(Status_Kehadiran),
+                Status_Masuk     = VALUES(Status_Masuk),
+                Status_Pulang    = VALUES(Status_Pulang)
+            """
+
+            inserted = 0
+            updated_rows = []
+            inserted_data = []
+
+            for row in data:
+
+                raw_tgl = row["Tanggal"]
+
+                if isinstance(raw_tgl, str):
+                    try:
+                        # ISO: 2024-11-01
+                        tgl = datetime.fromisoformat(raw_tgl[:10]).date()
+                    except:
+                        try:
+                            # JS Date: Sat, 01 Nov 2024
+                            tgl = datetime.strptime(raw_tgl[:16], "%a, %d %b %Y").date()
+                        except:
+                            raise ValueError(f"Format tanggal tidak dikenali: {raw_tgl}")
+                else:
+                    tgl = raw_tgl
+
+                cur.execute("""
+                    SELECT Status_Kehadiran, Status_Masuk, Status_Pulang
+                    FROM croscek
+                    WHERE id_karyawan=%s AND Tanggal=%s
+                """, (row["id_karyawan"], tgl))
+
+                old = cur.fetchone()
+                changed_fields = []
+
+                if old:
+                    if old["Status_Kehadiran"] != row["Status_Kehadiran"]:
+                        changed_fields.append("Status_Kehadiran")
+                    if old["Status_Masuk"] != row["Status_Masuk"]:
+                        changed_fields.append("Status_Masuk")
+                    if old["Status_Pulang"] != row["Status_Pulang"]:
+                        changed_fields.append("Status_Pulang")
+
+                if old and not changed_fields:
+                    continue  # 🔥 hemat DB
+
+                cur.execute(insert_sql, (
+                    row["Nama"],
+                    tgl,
+                    row["Kode_Shift"],
+                    row["Jabatan"],
+                    row["Departemen"],
+                    row["id_karyawan"],
+                    row["NIK"],
+                    row["Jadwal_Masuk"],
+                    row["Jadwal_Pulang"],
+                    row["Actual_Masuk"],
+                    row["Actual_Pulang"],
+                    row["Status_Kehadiran"],
+                    row["Status_Masuk"],
+                    row["Status_Pulang"],
+                ))
+
+                if old and changed_fields:
+                    updated_rows.append({
+                        "Nama": row["Nama"],
+                        "Tanggal": str(tgl),
+                        "Fields": changed_fields
+                    })
+
+                inserted += 1
+
+            conn.commit()
+
+            # 🔥 AMBIL DATA TERBARU DARI DATABASE UNTUK DITAMPILKAN DI UI
+            cur.execute("""
+                SELECT
+                    Nama,
+                    Tanggal,
+                    Kode_Shift,
+                    Jabatan,
+                    Departemen,
+                    id_karyawan,
+                    NIK,
+                    Jadwal_Masuk,
+                    Jadwal_Pulang,
+                    Actual_Masuk,
+                    Actual_Pulang,
+                    Status_Kehadiran,
+                    Status_Masuk,
+                    Status_Pulang
+                FROM croscek
+                ORDER BY Tanggal DESC, Nama ASC
+            """)
+            
+            inserted_data = cur.fetchall()
+            
+            # Convert TIME/DATE fields to strings untuk JSON serialization
+            for row in inserted_data:
+                if row['Jadwal_Masuk'] is not None:
+                    row['Jadwal_Masuk'] = str(row['Jadwal_Masuk'])
+                if row['Jadwal_Pulang'] is not None:
+                    row['Jadwal_Pulang'] = str(row['Jadwal_Pulang'])
+                if row['Actual_Masuk'] is not None:
+                    row['Actual_Masuk'] = str(row['Actual_Masuk'])
+                if row['Actual_Pulang'] is not None:
+                    row['Actual_Pulang'] = str(row['Actual_Pulang'])
+                if isinstance(row['Tanggal'], date):
+                    row['Tanggal'] = str(row['Tanggal'])
+
+            cur.close()
+            conn.close()
+
+            return jsonify({
+                "success": True,
+                "total": len(data),
+                "inserted": inserted,
+                "updated": len(updated_rows),
+                "updated_rows": updated_rows,
+                "data": inserted_data
+            })
+
+        except Exception as e:
+            conn.rollback()
+            print("ERROR:", e)
+            return jsonify({"error": str(e)}), 500
+
+
+from datetime import datetime, date, timedelta
+@app.route("/api/croscek/final", methods=["GET"])
+def get_croscek_final():
+    conn = db()
+    cur = conn.cursor(dictionary=True)
+
+    def serialize_row(row):
+        result = {}
+        for k, v in row.items():
+            if isinstance(v, timedelta):
+                total_seconds = int(v.total_seconds())
+                hours = total_seconds // 3600
+                minutes = (total_seconds % 3600) // 60
+                seconds = total_seconds % 60
+                result[k] = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            elif isinstance(v, (datetime, date)):
+                result[k] = v.isoformat()
+            else:
+                result[k] = v
+        return result
+
+    try:
+        cur.execute("""
+            SELECT
+                Nama,
+                Tanggal,
+                Kode_Shift,
+                Jabatan,
+                Departemen,
+                id_karyawan,
+                NIK,
+                Jadwal_Masuk,
+                Jadwal_Pulang,
+                Actual_Masuk,
+                Actual_Pulang,
+                Status_Kehadiran,
+                Status_Masuk,
+                Status_Pulang
+            FROM croscek
+            ORDER BY Tanggal, Nama
+        """)
+
         rows = cur.fetchall()
+        data = [serialize_row(row) for row in rows]
 
-        # Convert TIME fields to strings for JSON serialization
-        for row in rows:
-            if row['Jadwal_Masuk'] is not None:
-                row['Jadwal_Masuk'] = str(row['Jadwal_Masuk'])
-            if row['Jadwal_Pulang'] is not None:
-                row['Jadwal_Pulang'] = str(row['Jadwal_Pulang'])
-            if row['Actual_Masuk'] is not None:
-                row['Actual_Masuk'] = str(row['Actual_Masuk'])
-            if row['Actual_Pulang'] is not None:
-                row['Actual_Pulang'] = str(row['Actual_Pulang'])
+        return jsonify({
+            "success": True,
+            "data": data
+        })
 
-        cur.close()
-        conn.close()
-
-        return jsonify({"data": rows})
     except Exception as e:
-        print("ERROR CROSCEK:", e)
+        print("ERROR FETCH FINAL:", e)
         return jsonify({"error": str(e)}), 500
+
+    
+    
 
 # # Helper function yang bikin error
 # def parse_month_year(month_year_str):
