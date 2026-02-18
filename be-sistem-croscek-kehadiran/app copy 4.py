@@ -3877,17 +3877,8 @@ def proses_croscek():
                                 WHERE jk_next.id_karyawan = jk.id_karyawan
                                 AND jk_next.tanggal = DATE_ADD(jk.tanggal, INTERVAL 1 DAY)
                                 AND jk_next.kode_shift NOT IN ('CT','CTT','EO','OF1','CTB','X')
-
-                                -- 🔧 hanya block jika benar-benar dekat jam masuk shift berikutnya
-                                AND ABS(
-                                    TIMESTAMPDIFF(
-                                        MINUTE,
-                                        kk.tanggal_scan,
-                                        CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', ij_next.jam_masuk)
-                                    )
-                                ) <= 60
+                                AND ij_next.jam_masuk < '10:00:00'
                             )
-
                     ),
 
                         /* CTE 1: Scan Data per Karyawan per Tanggal */
@@ -3898,19 +3889,10 @@ def proses_croscek():
                                 k.id_karyawan,
                                 k.nama,
                                 DATE(kk.tanggal_scan) AS tanggal,
-                                MIN(CASE 
-                                        WHEN TIME(kk.tanggal_scan) >= '12:00:00' 
-                                        THEN kk.tanggal_scan 
-                                    END) AS scan_masuk,
-                                MAX(CASE 
-                                        WHEN TIME(kk.tanggal_scan) <= '12:00:00' 
-                                        THEN NULL
-                                        ELSE kk.tanggal_scan 
-                                    END) AS scan_pulang
+                                MIN(kk.tanggal_scan) AS scan_masuk,
+                                MAX(kk.tanggal_scan) AS scan_pulang
                             FROM kehadiran_karyawan kk
-                            JOIN karyawan k 
-                                ON k.id_absen = kk.pin 
-                                AND k.kategori = 'karyawan'
+                            JOIN karyawan k ON k.id_absen = kk.pin AND k.kategori = 'karyawan'  -- ✅ MATCH by PIN
                             LEFT JOIN used_scan_pulang_malam u
                                 ON u.pin = kk.pin
                                 AND u.tanggal_scan = kk.tanggal_scan
@@ -3997,17 +3979,10 @@ def proses_croscek():
                                             AND u.tanggal_scan = kk.tanggal_scan
                                         WHERE kk.pin = k.id_absen  -- ✅ MATCH by PIN
                                         AND u.tanggal_scan IS NULL
+                                        AND DATE(kk.tanggal_scan) = jk.tanggal
                                         AND kk.tanggal_scan BETWEEN 
-                                            CONCAT(jk.tanggal, ' ', ij.jam_masuk) - INTERVAL 6 HOUR
+                                            CONCAT(jk.tanggal, ' 02:00:00')
                                             AND CONCAT(jk.tanggal, ' ', ij.jam_masuk) + INTERVAL 4 HOUR
-                                        -- 🔥 FILTER TAMBAHAN (ANTI NYERET)
-                                        AND ABS(
-                                            TIMESTAMPDIFF(
-                                                MINUTE,
-                                                kk.tanggal_scan,
-                                                CONCAT(jk.tanggal, ' ', ij.jam_masuk)
-                                            )
-                                        ) <= 240
                                         AND NOT EXISTS (
                                             SELECT 1
                                             FROM jadwal_karyawan jk_prev
@@ -4034,9 +4009,8 @@ def proses_croscek():
                                                 FROM kehadiran_karyawan kk_out
                                                 WHERE kk_out.pin = k.id_absen  -- ✅ MATCH by PIN
                                                 AND DATE(kk_out.tanggal_scan) = DATE_ADD(jk.tanggal, INTERVAL 1 DAY)
-                                                AND kk_out.tanggal_scan BETWEEN
-                                                    CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', ij.jam_pulang)
-                                                    AND CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', ij.jam_pulang) + INTERVAL 75 MINUTE
+                                                AND TIME(kk_out.tanggal_scan) >= '06:00:00'
+                                                AND TIME(kk_out.tanggal_scan) <= '11:00:00'
                                                 AND kk_out.tanggal_scan != COALESCE((
                                                     SELECT MIN(kk_in.tanggal_scan)
                                                     FROM kehadiran_karyawan kk_in
@@ -4165,40 +4139,16 @@ def proses_croscek():
                                                     ) >= (TIMESTAMPDIFF(MINUTE, ij.jam_masuk, ij.jam_pulang) * 0.5)
                                                 )
                                                 
-                                                AND (
-                                                    -- PRIORITAS 1: Durasi sangat valid → override conflict
-                                                    TIMESTAMPDIFF(
-                                                        MINUTE,
-                                                        (
-                                                            SELECT MIN(kk_in.tanggal_scan)
-                                                            FROM kehadiran_karyawan kk_in
-                                                            WHERE kk_in.pin = k.id_absen
-                                                            AND kk_in.tanggal_scan BETWEEN
-                                                                CONCAT(jk.tanggal, ' ', ij.jam_masuk) - INTERVAL 6 HOUR
-                                                                AND CONCAT(jk.tanggal, ' ', ij.jam_masuk) + INTERVAL 4 HOUR
-                                                        ),
-                                                        kk_out.tanggal_scan
-                                                    ) >= (TIMESTAMPDIFF(MINUTE, ij.jam_masuk, ij.jam_pulang) * 0.8)
-
-                                                    OR
-
-                                                    -- PRIORITAS 2: Jika durasi biasa saja, tetap cek conflict
-                                                    NOT EXISTS (
-                                                        SELECT 1
-                                                        FROM jadwal_karyawan jk_next
-                                                        JOIN informasi_jadwal ij_next 
-                                                            ON ij_next.kode = jk_next.kode_shift
-                                                        WHERE jk_next.id_karyawan = jk.id_karyawan
-                                                        AND jk_next.tanggal = DATE_ADD(jk.tanggal, INTERVAL 1 DAY)
-                                                        AND jk_next.kode_shift NOT IN ('CT','CTT','EO','OF1','CTB','X')
-                                                        AND ABS(
-                                                            TIMESTAMPDIFF(
-                                                                MINUTE,
-                                                                kk_out.tanggal_scan,
-                                                                CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', ij_next.jam_masuk)
-                                                            )
-                                                        ) <= 60
-                                                    )
+                                                AND NOT EXISTS (
+                                                    SELECT 1
+                                                    FROM jadwal_karyawan jk_next
+                                                    JOIN informasi_jadwal ij_next ON ij_next.kode = jk_next.kode_shift
+                                                    WHERE jk_next.id_karyawan = jk.id_karyawan
+                                                    AND jk_next.tanggal = DATE_ADD(jk.tanggal, INTERVAL 1 DAY)
+                                                    AND jk_next.kode_shift NOT IN ('CT','CTT','EO','OF1','CTB','X')
+                                                    AND kk_out.tanggal_scan BETWEEN
+                                                        CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', ij_next.jam_masuk) - INTERVAL 2 HOUR
+                                                        AND CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', ij_next.jam_masuk) + INTERVAL 4 HOUR
                                                 )
 
                                                 ORDER BY ABS(TIMESTAMPDIFF(MINUTE, kk_out.tanggal_scan, 
@@ -5099,40 +5049,16 @@ def proses_croscek():
                                                     ) >= (TIMESTAMPDIFF(MINUTE, ij.jam_masuk, ij.jam_pulang) * 0.5)
                                                 )
                                                 
-                                                AND (
-                                                    -- Jika durasi valid sebagai pulang shift ini → izinkan
-                                                    TIMESTAMPDIFF(
-                                                        MINUTE,
-                                                        (
-                                                            SELECT MIN(kk_in.tanggal_scan)
-                                                            FROM kehadiran_karyawan kk_in
-                                                            WHERE kk_in.pin = k.id_absen
-                                                            AND kk_in.tanggal_scan BETWEEN
-                                                                CONCAT(jk.tanggal, ' ', ij.jam_masuk) - INTERVAL 6 HOUR
-                                                                AND CONCAT(jk.tanggal, ' ', ij.jam_masuk) + INTERVAL 4 HOUR
-                                                        ),
-                                                        kk_out.tanggal_scan
-                                                    ) >= (TIMESTAMPDIFF(MINUTE, ij.jam_masuk, ij.jam_pulang) * 0.8)
-
-                                                    AND NOT EXISTS (
-                                                        SELECT 1
-                                                        FROM jadwal_karyawan jk_next
-                                                        JOIN informasi_jadwal ij_next 
-                                                            ON ij_next.kode = jk_next.kode_shift
-                                                        WHERE jk_next.id_karyawan = jk.id_karyawan
-                                                        AND jk_next.tanggal = DATE_ADD(jk.tanggal, INTERVAL 1 DAY)
-                                                        AND jk_next.kode_shift NOT IN ('CT','CTT','EO','OF1','CTB','X')
-
-                                                        -- 🔧 PERSEMPIT WINDOW CONFLICT
-                                                        AND ABS(
-                                                            TIMESTAMPDIFF(
-                                                                MINUTE,
-                                                                kk_out.tanggal_scan,
-                                                                CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', ij_next.jam_masuk)
-                                                            )
-                                                        ) <= 60
-                                                    )
-
+                                                AND NOT EXISTS (
+                                                    SELECT 1
+                                                    FROM jadwal_karyawan jk_next
+                                                    JOIN informasi_jadwal ij_next ON ij_next.kode = jk_next.kode_shift
+                                                    WHERE jk_next.id_karyawan = jk.id_karyawan
+                                                    AND jk_next.tanggal = DATE_ADD(jk.tanggal, INTERVAL 1 DAY)
+                                                    AND jk_next.kode_shift NOT IN ('CT','CTT','EO','OF1','CTB','X')
+                                                    AND kk_out.tanggal_scan BETWEEN
+                                                        CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', ij_next.jam_masuk) - INTERVAL 2 HOUR
+                                                        AND CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', ij_next.jam_masuk) + INTERVAL 4 HOUR
                                                 )
 
                                                 ORDER BY ABS(TIMESTAMPDIFF(MINUTE, kk_out.tanggal_scan, 
@@ -7540,42 +7466,17 @@ def proses_croscek_dw():
                                                     ) >= (TIMESTAMPDIFF(MINUTE, ij.jam_masuk, ij.jam_pulang) * 0.5)
                                                 )
                                                 
-                                                AND (
-                                                    -- PRIORITAS 1: Durasi sangat valid → override conflict
-                                                    TIMESTAMPDIFF(
-                                                        MINUTE,
-                                                        (
-                                                            SELECT MIN(kk_in.tanggal_scan)
-                                                            FROM kehadiran_karyawan kk_in
-                                                            WHERE kk_in.pin = k.id_absen
-                                                            AND kk_in.tanggal_scan BETWEEN
-                                                                CONCAT(jk.tanggal, ' ', ij.jam_masuk) - INTERVAL 6 HOUR
-                                                                AND CONCAT(jk.tanggal, ' ', ij.jam_masuk) + INTERVAL 4 HOUR
-                                                        ),
-                                                        kk_out.tanggal_scan
-                                                    ) >= (TIMESTAMPDIFF(MINUTE, ij.jam_masuk, ij.jam_pulang) * 0.8)
-
-                                                    OR
-
-                                                    -- PRIORITAS 2: Jika durasi biasa saja, tetap cek conflict
-                                                    NOT EXISTS (
-                                                        SELECT 1
-                                                        FROM jadwal_karyawan jk_next
-                                                        JOIN informasi_jadwal ij_next 
-                                                            ON ij_next.kode = jk_next.kode_shift
-                                                        WHERE jk_next.id_karyawan = jk.id_karyawan
-                                                        AND jk_next.tanggal = DATE_ADD(jk.tanggal, INTERVAL 1 DAY)
-                                                        AND jk_next.kode_shift NOT IN ('CT','CTT','EO','OF1','CTB','X')
-                                                        AND ABS(
-                                                            TIMESTAMPDIFF(
-                                                                MINUTE,
-                                                                kk_out.tanggal_scan,
-                                                                CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', ij_next.jam_masuk)
-                                                            )
-                                                        ) <= 60
-                                                    )
+                                                AND NOT EXISTS (
+                                                    SELECT 1
+                                                    FROM jadwal_karyawan jk_next
+                                                    JOIN informasi_jadwal ij_next ON ij_next.kode = jk_next.kode_shift
+                                                    WHERE jk_next.id_karyawan = jk.id_karyawan
+                                                    AND jk_next.tanggal = DATE_ADD(jk.tanggal, INTERVAL 1 DAY)
+                                                    AND jk_next.kode_shift NOT IN ('CT','CTT','EO','OF1','CTB','X')
+                                                    AND kk_out.tanggal_scan BETWEEN
+                                                        CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', ij_next.jam_masuk) - INTERVAL 2 HOUR
+                                                        AND CONCAT(DATE_ADD(jk.tanggal, INTERVAL 1 DAY), ' ', ij_next.jam_masuk) + INTERVAL 4 HOUR
                                                 )
-
 
                                                 ORDER BY ABS(TIMESTAMPDIFF(MINUTE, kk_out.tanggal_scan, 
                                                     CONCAT(jk.tanggal, ' ', ij.jam_pulang)))

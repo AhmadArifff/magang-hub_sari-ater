@@ -4,7 +4,7 @@ import { UploadCloud, FileSpreadsheet, Plus, Download, Trash2, Edit, Search } fr
 import * as XLSX from "xlsx";
 import sariAter from "../assets/sari-ater.png";
 
-export default function Karyawan() {
+export default function Karyawan_DW() {
   const API_URL = "http://127.0.0.1:5000/api";  // ✅ TAMBAHKAN INI: URL backend Flask
 
   const [showModal, setShowModal] = useState(false);
@@ -23,7 +23,7 @@ export default function Karyawan() {
   const cols = ["nama", "nik", "jabatan", "dept", "id_absen"];
 
   const fetchData = async () => {
-    const res = await fetch(`${API_URL}/karyawan/list?search=${search}&page=${currentPage}`);
+    const res = await fetch(`${API_URL}/dw/list?search=${search}&page=${currentPage}`);
     const json = await res.json();
     setData(json.data);
     setTotal(json.total);
@@ -63,7 +63,7 @@ export default function Karyawan() {
 
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/karyawan/upload`, {  // ✅ GUNAKAN API_URL
+      const res = await fetch(`${API_URL}/dw/upload`, {  // ✅ GUNAKAN API_URL
         method: "POST",
         body: formData
       });
@@ -115,7 +115,7 @@ export default function Karyawan() {
           body: JSON.stringify(form)
         });
       } else {
-        await fetch(`${API_URL}/karyawan/create`, {  // ✅ GUNAKAN API_URL
+        await fetch(`${API_URL}/dw/create`, {  // ✅ GUNAKAN API_URL
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(form)

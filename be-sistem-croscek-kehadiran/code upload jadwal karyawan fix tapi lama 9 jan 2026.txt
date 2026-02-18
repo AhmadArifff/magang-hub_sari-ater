@@ -1,0 +1,441 @@
+@app.route("/api/import-jadwal-karyawan", methods=["POST"])
+def import_jadwal():
+    if "file" not in request.files:
+        return jsonify({"error": "File tidak ditemukan"}), 400
+
+    file = request.files["file"]
+
+    # Baca Excel
+    try:
+        df = pd.read_excel(file, header=None)
+        print(f"📊 Total baris di Excel: {len(df)}")
+        print(f"📊 Total kolom di Excel: {len(df.columns)}")
+    except Exception as e:
+        return jsonify({"error": f"Gagal membaca file Excel: {str(e)}"}), 500
+
+    # Ambil bulan dan tahun dengan error handling yang lebih baik
+    try:
+        raw_cell = df.iloc[1, 0]
+        
+        # Jika cell berupa timestamp/datetime dari pandas
+        if isinstance(raw_cell, pd.Timestamp):
+            year = raw_cell.year
+            month = raw_cell.month
+            print(f"✓ Detected pandas Timestamp: {year}-{month}")
+        else:
+            month_year_str = str(raw_cell).strip()
+            print(f"Raw month_year_str: {repr(month_year_str)}")
+            year, month = parse_month_year(month_year_str)
+            
+    except Exception as e:
+        return jsonify({
+            "error": f"Gagal parsing bulan/tahun: {str(e)}",
+            "hint": "Format yang didukung: 'November 2025', '11/11/2025', '2025-11-01'"
+        }), 400
+
+    days_in_month = monthrange(year, month)[1]
+    print(f"📅 Bulan: {month}, Tahun: {year}, Jumlah hari: {days_in_month}")
+    
+    data = df.iloc[5:, :]
+    print(f"📋 Jumlah baris data karyawan: {len(data)}")
+
+    conn = db()
+    cur = conn.cursor()
+
+    # Ambil semua kode valid
+    cur.execute("SELECT kode FROM informasi_jadwal")
+    valid_kode_shift = {row[0].strip() for row in cur.fetchall()}
+    print(f"✅ Kode shift valid: {valid_kode_shift}")
+
+    # Ambil semua id_karyawan dari database sekali saja
+    cur.execute("SELECT id_karyawan, nik, nama FROM karyawan")
+    karyawan_rows = cur.fetchall()
+    karyawan_dict = {row[1]: {"id": row[0], "nama": row[2]} for row in karyawan_rows}
+    print(f"👥 Total karyawan di database: {len(karyawan_dict)}")
+    print(f"📋 NIK di database: {list(karyawan_dict.keys())[:10]}")  # Show first 10
+
+    # Hapus jadwal lama bulan ini
+    cur.execute("DELETE FROM jadwal_karyawan WHERE YEAR(tanggal)=%s AND MONTH(tanggal)=%s", (year, month))
+    deleted_rows = cur.rowcount
+    conn.commit()
+    print(f"🗑️ Deleted {deleted_rows} jadwal lama")
+
+    inserted_count = 0
+    invalid_codes = []
+    not_found_employees = []
+    batch_size = 5000
+    batch_counter = 0
+
+    for idx, row in data.iterrows():
+        nik_raw = row[1]
+        nik = str(nik_raw).strip() if pd.notna(nik_raw) else ""
+        nama_excel = str(row[2]).strip() if pd.notna(row[2]) else ""
+        
+        # print(f"\n🔍 Processing: NIK='{nik}' (type: {type(nik_raw)}), Nama={nama_excel}")
+        
+        # Debug: cek apakah NIK ada di dictionary
+        if nik:
+            # Coba konversi ke int jika memungkinkan untuk matching
+            nik_variations = [
+                nik,  # Original string
+                str(int(float(nik))) if nik.replace('.', '').isdigit() else nik,  # As integer string
+            ]
+            # print(f"  🔎 NIK variations to check: {nik_variations}")
+            
+            found = False
+            for nik_variant in nik_variations:
+                if nik_variant in karyawan_dict:
+                    nik = nik_variant  # Use the matching variant
+                    found = True
+                    break
+            
+            if not found:
+                not_found_employees.append({
+                    "nik": nik,
+                    "nama": nama_excel,
+                    "error": "Karyawan tidak ditemukan di database"
+                })
+                print(f"  ❌ Karyawan tidak ditemukan")
+                continue
+        else:
+            not_found_employees.append({
+                "nik": nik,
+                "nama": nama_excel,
+                "error": "NIK kosong"
+            })
+            print(f"  ❌ NIK kosong")
+            continue
+
+        id_karyawan = karyawan_dict[nik]["id"]
+        nama = karyawan_dict[nik]["nama"]
+        # print(f"  ✅ Found: ID={id_karyawan}, Nama={nama}")
+
+        shift_count = 0
+        for col_idx in range(3, 3 + days_in_month):
+            if col_idx >= len(row):
+                break
+
+            raw_kode = row[col_idx]
+            if pd.isna(raw_kode):
+                continue
+
+            kode_shift = str(raw_kode).strip()
+            if not kode_shift:
+                continue
+
+            day = col_idx - 2
+            # print(f"    Day {day}: kode_shift='{kode_shift}'")
+
+            if kode_shift not in valid_kode_shift:
+                invalid_codes.append({
+                    "nik": nik,
+                    "nama": nama,
+                    "tanggal": f"{year}-{month:02d}-{day:02d}",
+                    "kode_shift": kode_shift
+                })
+                print(f"    ⚠️ Invalid kode: {kode_shift}")
+                continue
+
+            tanggal = datetime(year, month, day).date()
+
+            try:
+                cur.execute("""
+                    INSERT INTO jadwal_karyawan (id_karyawan, nama, tanggal, kode_shift)
+                    VALUES (%s, %s, %s, %s)
+                """, (id_karyawan, nama, tanggal, kode_shift))
+                
+                inserted_count += 1
+                shift_count += 1
+                batch_counter += 1
+
+                if batch_counter >= batch_size:
+                    conn.commit()
+                    print(f"💾 Batch commit: {batch_counter} records")
+                    batch_counter = 0
+                    
+                # ==========================================
+                # HITUNG SHIFT WINDOW (OPS I - FINAL & AMAN)
+                # ==========================================
+                # print("🕒 Menghitung shift window...")
+
+                # cur.execute("""
+                #     UPDATE jadwal_karyawan jk
+                #     JOIN shift_info si 
+                #     ON jk.kode_shift = si.kode
+                #     SET
+                #     jk.shift_window_start =
+                #         CASE
+                        
+                #         -- ===============================
+                #         -- SHIFT KHUSUS 3A
+                #         -- ===============================
+                #         # WHEN jk.kode_shift = '3A'
+                #         #     THEN CONCAT(
+                #         #         DATE_SUB(jk.tanggal, INTERVAL 1 DAY),
+                #         #         ' ',
+                #         #         si.jam_masuk
+                #         #         )
+                        
+                #         WHEN jk.kode_shift = '3A'
+                #             THEN CONCAT(
+                #                 DATE_SUB(jk.tanggal, INTERVAL 1 DAY),
+                #                 ' 22:00:00'
+                #             )
+                        
+                #         /* ===============================
+                #         SHIFT LIBUR / CUTI
+                #         =============================== */
+                #         WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                #             THEN NULL
+
+                #         -- ===============================
+                #         -- LINTAS HARI NORMAL
+                #         -- ===============================
+                #         WHEN si.lintas_hari = 1
+                #             AND si.jam_masuk > si.jam_pulang
+                #             THEN CONCAT(
+                #                 jk.tanggal,
+                #                 ' ',
+                #                 si.jam_masuk
+                #                 )
+
+                #         -- ===============================
+                #         -- NON LINTAS HARI
+                #         -- ===============================
+                #         ELSE CONCAT(jk.tanggal, ' ', si.jam_masuk)
+                #         END,
+
+                #     jk.shift_window_end =
+                #         CASE
+                #         -- ===============================
+                #         -- SHIFT KHUSUS 3A
+                #         -- ===============================
+                #         # WHEN jk.kode_shift = '3A'
+                #         #     THEN CONCAT(
+                #         #         jk.tanggal,
+                #         #         ' ',
+                #         #         si.jam_pulang
+                #         #         )
+                        
+                #         WHEN jk.kode_shift = '3A'
+                #             THEN CONCAT(
+                #                 jk.tanggal,
+                #                 ' 11:00:00'
+                #             )
+                                
+                #         /* ===============================
+                #         SHIFT LIBUR / CUTI
+                #         =============================== */
+                #         WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                #             THEN NULL
+
+                #         -- ===============================
+                #         -- LINTAS HARI NORMAL
+                #         -- ===============================
+                #         WHEN si.lintas_hari = 1
+                #             AND si.jam_masuk > si.jam_pulang
+                #             THEN CONCAT(
+                #                 DATE_ADD(jk.tanggal, INTERVAL 1 DAY),
+                #                 ' ',
+                #                 si.jam_pulang
+                #                 )
+
+                #         -- ===============================
+                #         -- NON LINTAS HARI
+                #         -- ===============================
+                #         ELSE CONCAT(jk.tanggal, ' ', si.jam_pulang)
+                #         END
+                #     WHERE YEAR(jk.tanggal) = %s
+                #     AND MONTH(jk.tanggal) = %s;
+                # """, (year, month))
+                
+                # Perbaikan pada bagian UPDATE shift_window di import_jadwal()
+                # Ganti bagian UPDATE yang lama dengan kode ini:
+
+                cur.execute("""
+                    UPDATE jadwal_karyawan jk
+                    JOIN shift_info si 
+                    ON jk.kode_shift = si.kode
+                    SET
+                    jk.shift_window_start =
+                        CASE
+                        -- ===============================
+                        -- SHIFT KHUSUS 3A (PERBAIKAN)
+                        -- Window: H-1 22:00 s/d H 11:00
+                        -- ===============================
+                        WHEN jk.kode_shift = '3A'
+                            THEN CONCAT(
+                                DATE_SUB(jk.tanggal, INTERVAL 1 DAY),
+                                ' 22:00:00'
+                            )
+                        
+                        -- ===============================
+                        -- SHIFT LIBUR / CUTI
+                        -- ===============================
+                        WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                            THEN NULL
+
+                        -- ===============================
+                        -- LINTAS HARI NORMAL
+                        -- ===============================
+                        WHEN si.lintas_hari = 1
+                            AND si.jam_masuk > si.jam_pulang
+                            THEN CONCAT(
+                                jk.tanggal,
+                                ' ',
+                                si.jam_masuk
+                                )
+
+                        -- ===============================
+                        -- NON LINTAS HARI
+                        -- ===============================
+                        ELSE CONCAT(jk.tanggal, ' ', si.jam_masuk)
+                        END,
+
+                    jk.shift_window_end =
+                        CASE
+                        -- ===============================
+                        -- SHIFT KHUSUS 3A (PERBAIKAN)
+                        -- ===============================
+                        WHEN jk.kode_shift = '3A'
+                            THEN CONCAT(
+                                jk.tanggal,
+                                ' 11:00:00'
+                            )
+                                
+                        -- ===============================
+                        -- SHIFT LIBUR / CUTI
+                        -- ===============================
+                        WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                            THEN NULL
+
+                        -- ===============================
+                        -- LINTAS HARI NORMAL
+                        -- ===============================
+                        WHEN si.lintas_hari = 1
+                            AND si.jam_masuk > si.jam_pulang
+                            THEN CONCAT(
+                                DATE_ADD(jk.tanggal, INTERVAL 1 DAY),
+                                ' ',
+                                si.jam_pulang
+                                )
+
+                        -- ===============================
+                        -- NON LINTAS HARI
+                        -- ===============================
+                        ELSE CONCAT(jk.tanggal, ' ', si.jam_pulang)
+                        END
+                    WHERE YEAR(jk.tanggal) = %s
+                    AND MONTH(jk.tanggal) = %s;
+                """, (year, month))
+                
+                # Ganti bagian UPDATE yang lama dengan kode ini di fungsi import_jadwal():
+                # cur.execute("""
+                #     UPDATE jadwal_karyawan jk
+                #     JOIN shift_info si 
+                #     ON jk.kode_shift = si.kode
+                #     SET
+                #     jk.shift_window_start =
+                #         CASE
+                #         -- ===============================
+                #         -- SHIFT KHUSUS 3A (PERBAIKAN: Window lebih luas)
+                #         -- Window start: H-1 22:00 (untuk scan malam sebelumnya)
+                #         -- ===============================
+                #         WHEN jk.kode_shift = '3A'
+                #             THEN CONCAT(
+                #                 DATE_SUB(jk.tanggal, INTERVAL 1 DAY),
+                #                 ' 22:00:00'
+                #             )
+                        
+                #         -- ===============================
+                #         -- SHIFT LIBUR / CUTI
+                #         -- ===============================
+                #         WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                #             THEN NULL
+
+                #         -- ===============================
+                #         -- LINTAS HARI NORMAL
+                #         -- ===============================
+                #         WHEN si.lintas_hari = 1
+                #             AND si.jam_masuk > si.jam_pulang
+                #             THEN CONCAT(
+                #                 jk.tanggal,
+                #                 ' ',
+                #                 si.jam_masuk
+                #                 )
+
+                #         -- ===============================
+                #         -- NON LINTAS HARI
+                #         -- ===============================
+                #         ELSE CONCAT(jk.tanggal, ' ', si.jam_masuk)
+                #         END,
+
+                #     jk.shift_window_end =
+                #         CASE
+                #         -- ===============================
+                #         -- SHIFT KHUSUS 3A (PERBAIKAN: Window diperpanjang hingga H+1 05:00)
+                #         -- Untuk menangkap scan masuk telat hingga dini hari H+1
+                #         -- ===============================
+                #         WHEN jk.kode_shift = '3A'
+                #             THEN CONCAT(
+                #                 DATE_ADD(jk.tanggal, INTERVAL 1 DAY),
+                #                 ' 05:00:00'
+                #             )
+                                                
+                #         -- ===============================
+                #         -- SHIFT LIBUR / CUTI
+                #         -- ===============================
+                #         WHEN jk.kode_shift IN ('X','CT','CTB','CTT','OF1','EO')
+                #             THEN NULL
+
+                #         -- ===============================
+                #         -- LINTAS HARI NORMAL
+                #         -- ===============================
+                #         WHEN si.lintas_hari = 1
+                #             AND si.jam_masuk > si.jam_pulang
+                #             THEN CONCAT(
+                #                 DATE_ADD(jk.tanggal, INTERVAL 1 DAY),
+                #                 ' ',
+                #                 si.jam_pulang
+                #                 )
+
+                #         -- ===============================
+                #         -- NON LINTAS HARI
+                #         -- ===============================
+                #         ELSE CONCAT(jk.tanggal, ' ', si.jam_pulang)
+                #         END
+                #     WHERE YEAR(jk.tanggal) = %s
+                #     AND MONTH(jk.tanggal) = %s;
+                # """, (year, month))
+
+                conn.commit()
+
+                # conn.commit()
+                # print("✅ Shift window berhasil dihitung")
+
+            except Exception as e:
+                print(f"    ❌ Insert error: {str(e)}")
+                continue
+        
+        # print(f"  📊 Total shift inserted for {nama}: {shift_count}")
+
+    if batch_counter > 0:
+        # Reset hasil croscek
+        cur.execute("TRUNCATE TABLE croscek")
+        conn.commit()
+        print(f"💾 Final commit: {batch_counter} records")
+
+    cur.close()
+    conn.close()
+
+    print(f"\n✅ SUMMARY: {inserted_count} data berhasil disimpan")
+    print(f"❌ Karyawan tidak ditemukan: {len(not_found_employees)}")
+    print(f"⚠️ Kode shift invalid: {len(invalid_codes)}")
+
+    return jsonify({
+        "message": f"Import selesai! {inserted_count} data berhasil disimpan untuk {month}/{year}.",
+        "period": f"{month}/{year}",
+        "inserted_count": inserted_count,
+        "not_found_employees": not_found_employees,
+        "invalid_codes": invalid_codes
+    })

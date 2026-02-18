@@ -1,0 +1,344 @@
+SELECT
+    base.Nama,
+    base.Tanggal,
+    base.Kode_Shift,
+    base.Jabatan,
+    base.Departemen,
+    base.id_karyawan,
+    base.NIK,
+
+    ij.jam_masuk AS Jadwal_Masuk,
+    ij.jam_pulang AS Jadwal_Pulang,
+
+    /* ===== ACTUAL BY JADWAL (GROUND TRUTH) ===== */
+    base.Actual_Masuk,
+    base.Actual_Pulang,
+
+    /* ===== PREDIKSI SHIFT (HANYA MUNCUL JIKA ADA YANG NULL) ===== */
+    CASE 
+        WHEN base.Actual_Masuk IS NOT NULL AND base.Actual_Pulang IS NOT NULL 
+            THEN NULL  -- Jika keduanya lengkap, prediksi tidak muncul
+        ELSE pred.Prediksi_Shift
+    END AS Prediksi_Shift,
+    
+    CASE 
+        WHEN base.Actual_Masuk IS NOT NULL AND base.Actual_Pulang IS NOT NULL 
+            THEN NULL
+        ELSE pred.Prediksi_Actual_Masuk
+    END AS Prediksi_Actual_Masuk,
+    
+    CASE 
+        WHEN base.Actual_Masuk IS NOT NULL AND base.Actual_Pulang IS NOT NULL 
+            THEN NULL
+        ELSE pred.Prediksi_Actual_Pulang
+    END AS Prediksi_Actual_Pulang,
+
+    /* ===== STATUS KEHADIRAN ===== */
+    CASE
+        WHEN base.Kode_Shift IN ('CT','CTT','EO','OF1','CTB','X')
+            THEN ij.keterangan
+        WHEN base.Actual_Masuk IS NULL AND base.Actual_Pulang IS NULL
+            THEN 'Tidak Hadir'
+        ELSE 'Hadir'
+    END AS Status_Kehadiran,
+
+    base.Status_Masuk,
+    base.Status_Pulang
+
+FROM (
+
+    /* ================= BASE LEVEL 2 ================= */
+    SELECT
+        br.*,
+
+        /* ===== STATUS MASUK ===== */
+        CASE
+            WHEN br.Actual_Masuk IS NULL
+                THEN 'Tidak scan masuk'
+
+            WHEN br.Kode_Shift = '3A'
+                THEN CASE
+                    WHEN DATE(br.Actual_Masuk) = br.Tanggal
+                        OR (
+                            DATE(br.Actual_Masuk) = DATE_SUB(br.Tanggal, INTERVAL 1 DAY)
+                            AND TIME(br.Actual_Masuk) >= '22:00:00'
+                        )
+                        THEN 'Masuk Tepat Waktu'
+                    ELSE 'Masuk Telat'
+                END
+
+            WHEN br.jam_pulang < br.jam_masuk
+                THEN CASE
+                    WHEN DATE(br.Actual_Masuk) = br.Tanggal
+                        OR (
+                            DATE(br.Actual_Masuk) = DATE_SUB(br.Tanggal, INTERVAL 1 DAY)
+                            AND TIME(br.Actual_Masuk) >= br.jam_masuk
+                        )
+                        THEN 'Masuk Tepat Waktu'
+                    ELSE 'Masuk Telat'
+                END
+
+            ELSE CASE
+                WHEN TIME(br.Actual_Masuk) > br.jam_masuk
+                    THEN 'Masuk Telat'
+                ELSE 'Masuk Tepat Waktu'
+            END
+        END AS Status_Masuk,
+
+        /* ===== STATUS PULANG ===== */
+        CASE
+            WHEN br.Actual_Pulang IS NULL
+                THEN 'Tidak scan pulang'
+
+            WHEN br.Kode_Shift = '3A'
+                THEN CASE
+                    WHEN DATE(br.Actual_Pulang) = DATE_ADD(br.Tanggal, INTERVAL 1 DAY)
+                         AND TIME(br.Actual_Pulang) >= br.jam_pulang
+                        THEN 'Pulang Tepat Waktu'
+                    ELSE 'Pulang Terlalu Cepat'
+                END
+
+            WHEN br.jam_pulang < br.jam_masuk
+                THEN CASE
+                    WHEN DATE(br.Actual_Pulang) = DATE_ADD(br.Tanggal, INTERVAL 1 DAY)
+                         AND TIME(br.Actual_Pulang) >= br.jam_pulang
+                        THEN 'Pulang Tepat Waktu'
+                    ELSE 'Pulang Terlalu Cepat'
+                END
+
+            ELSE CASE
+                WHEN TIME(br.Actual_Pulang) < br.jam_pulang
+                    THEN 'Pulang Terlalu Cepat'
+                ELSE 'Pulang Tepat Waktu'
+            END
+        END AS Status_Pulang
+
+    FROM (
+
+        /* ================= BASE RAW ================= */
+        SELECT
+            jk.nama AS Nama,
+            jk.tanggal AS Tanggal,
+            jk.kode_shift AS Kode_Shift,
+            k.jabatan AS Jabatan,
+            k.dept AS Departemen,
+            k.id_karyawan,
+            k.nik AS NIK,
+            ij.jam_masuk,
+            ij.jam_pulang,
+
+            /* =============================== ACTUAL MASUK =============================== */
+            CASE
+                WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+
+                WHEN jk.kode_shift = '3A'
+                THEN (
+                    SELECT MIN(kk.tanggal_scan)
+                    FROM kehadiran_karyawan kk
+                    WHERE kk.id_karyawan = jk.id_karyawan
+                    AND kk.nama = jk.nama
+                    AND kk.tanggal_scan BETWEEN
+                            DATE_ADD(
+                                CAST(CONCAT(jk.tanggal, ' 22:00:00') AS DATETIME),
+                                INTERVAL 0 SECOND
+                            )
+                        AND 
+                            DATE_ADD(
+                                CAST(CONCAT(jk.tanggal, ' 03:00:00') AS DATETIME),
+                                INTERVAL 1 DAY
+                            )
+                )
+
+                WHEN ij.jam_pulang < ij.jam_masuk
+                THEN (
+                    SELECT MIN(kk2.tanggal_scan)
+                    FROM kehadiran_karyawan kk2
+                    WHERE kk2.id_karyawan = jk.id_karyawan
+                    AND kk2.nama = jk.nama
+                    AND kk2.tanggal_scan BETWEEN
+                            DATE_SUB(
+                                CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME),
+                                INTERVAL 6 HOUR
+                            )
+                        AND 
+                            DATE_ADD(
+                                CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME),
+                                INTERVAL 4 HOUR
+                            )
+                )
+
+                ELSE (
+                    SELECT MIN(kk2.tanggal_scan)
+                    FROM kehadiran_karyawan kk2
+                    WHERE kk2.id_karyawan = jk.id_karyawan
+                    AND kk2.nama = jk.nama
+                    AND kk2.tanggal_scan BETWEEN
+                            CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                        AND CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+                )
+            END AS Actual_Masuk,
+
+            /* =============================== ACTUAL PULANG =============================== */
+            CASE
+                WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+
+                WHEN jk.kode_shift = '3A'
+                THEN (
+                    SELECT MAX(kk.tanggal_scan)
+                    FROM kehadiran_karyawan kk
+                    WHERE kk.id_karyawan = jk.id_karyawan
+                    AND kk.nama = jk.nama
+                    AND kk.tanggal_scan BETWEEN
+                            DATE_ADD(
+                                CAST(CONCAT(jk.tanggal, ' 06:00:00') AS DATETIME),
+                                INTERVAL 1 DAY
+                            )
+                        AND 
+                            DATE_ADD(
+                                CAST(CONCAT(jk.tanggal, ' 11:00:00') AS DATETIME),
+                                INTERVAL 1 DAY
+                            )
+                    AND kk.tanggal_scan <> COALESCE((
+                        SELECT MIN(kk_in.tanggal_scan)
+                        FROM kehadiran_karyawan kk_in
+                        WHERE kk_in.id_karyawan = jk.id_karyawan
+                            AND kk_in.nama = jk.nama
+                            AND kk_in.tanggal_scan BETWEEN
+                                CONCAT(jk.tanggal, ' 22:00:00')
+                            AND DATE_ADD(
+                                    CAST(CONCAT(jk.tanggal, ' 03:00:00') AS DATETIME),
+                                    INTERVAL 1 DAY
+                                )
+                    ), '1900-01-01')
+                )
+
+                WHEN ij.jam_pulang < ij.jam_masuk
+                THEN (
+                    SELECT MAX(kk3.tanggal_scan)
+                    FROM kehadiran_karyawan kk3
+                    WHERE kk3.id_karyawan = jk.id_karyawan
+                    AND kk3.nama = jk.nama
+                    AND kk3.tanggal_scan BETWEEN
+                            DATE_SUB(
+                                DATE_ADD(
+                                    CAST(CONCAT(jk.tanggal, ' ', ij.jam_pulang) AS DATETIME),
+                                    INTERVAL 1 DAY
+                                ),
+                                INTERVAL 12 HOUR
+                            )
+                        AND 
+                            DATE_ADD(
+                                DATE_ADD(
+                                    CAST(CONCAT(jk.tanggal, ' ', ij.jam_pulang) AS DATETIME),
+                                    INTERVAL 1 DAY
+                                ),
+                                INTERVAL 6 HOUR
+                            )
+                    AND kk3.tanggal_scan <> COALESCE((
+                        SELECT MIN(kk2.tanggal_scan)
+                        FROM kehadiran_karyawan kk2
+                        WHERE kk2.id_karyawan = jk.id_karyawan
+                            AND kk2.nama = jk.nama
+                            AND kk2.tanggal_scan BETWEEN
+                                CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                            AND CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+                    ), '1900-01-01')
+                )
+
+                ELSE (
+                    SELECT MAX(kk3.tanggal_scan)
+                    FROM kehadiran_karyawan kk3
+                    WHERE kk3.id_karyawan = jk.id_karyawan
+                    AND kk3.nama = jk.nama
+                    AND kk3.tanggal_scan BETWEEN
+                            CAST(CONCAT(jk.tanggal, ' ', ij.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                        AND CAST(CONCAT(jk.tanggal, ' ', ij.jam_pulang) AS DATETIME) + INTERVAL 6 HOUR
+                    AND kk3.tanggal_scan <> COALESCE((
+                        SELECT MIN(kk2.tanggal_scan)
+                        FROM kehadiran_karyawan kk2
+                        WHERE kk2.id_karyawan = jk.id_karyawan
+                            AND kk2.nama = jk.nama
+                            AND kk2.tanggal_scan BETWEEN
+                                CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                            AND CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+                    ), '1900-01-01')
+                )
+            END AS Actual_Pulang
+
+        FROM jadwal_karyawan jk
+        LEFT JOIN karyawan k ON k.id_karyawan = jk.id_karyawan
+        LEFT JOIN informasi_jadwal ij ON ij.kode = jk.kode_shift
+
+    ) br
+) base
+
+LEFT JOIN informasi_jadwal ij
+    ON ij.kode = base.Kode_Shift
+
+/* ================= PREDIKSI SHIFT (BERDASARKAN SCAN YANG ADA) ================= */
+LEFT JOIN (
+    SELECT
+        id_karyawan,
+        tanggal,
+        kode_shift AS Prediksi_Shift,
+        scan_masuk AS Prediksi_Actual_Masuk,
+        scan_pulang AS Prediksi_Actual_Pulang
+    FROM (
+        SELECT
+            s.id_karyawan,
+            s.tanggal,
+            ij2.kode AS kode_shift,
+            s.scan_masuk,
+            s.scan_pulang,
+            
+            /* Hitung deviasi total dari jam masuk dan pulang */
+            (
+                CASE 
+                    WHEN s.scan_masuk IS NOT NULL 
+                    THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_masuk), ij2.jam_masuk))
+                    ELSE 0 
+                END +
+                CASE 
+                    WHEN s.scan_pulang IS NOT NULL 
+                    THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_pulang), ij2.jam_pulang))
+                    ELSE 0 
+                END
+            ) AS deviasi_total,
+
+            /* Ranking berdasarkan deviasi terkecil (probabilitas tertinggi) */
+            ROW_NUMBER() OVER (
+                PARTITION BY s.id_karyawan, s.tanggal
+                ORDER BY
+                    (
+                        CASE 
+                            WHEN s.scan_masuk IS NOT NULL 
+                            THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_masuk), ij2.jam_masuk))
+                            ELSE 0 
+                        END +
+                        CASE 
+                            WHEN s.scan_pulang IS NOT NULL 
+                            THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_pulang), ij2.jam_pulang))
+                            ELSE 0 
+                        END
+                    ) ASC
+            ) AS rn
+
+        FROM (
+            /* Ambil semua scan karyawan per tanggal */
+            SELECT
+                kk.id_karyawan,
+                DATE(kk.tanggal_scan) AS tanggal,
+                MIN(kk.tanggal_scan) AS scan_masuk,
+                MAX(kk.tanggal_scan) AS scan_pulang
+            FROM kehadiran_karyawan kk
+            GROUP BY kk.id_karyawan, DATE(kk.tanggal_scan)
+        ) s
+        JOIN informasi_jadwal ij2
+            ON ij2.kode NOT IN ('CT','CTT','EO','OF1','CTB','X')
+    ) ranked
+    WHERE rn = 1  -- HANYA AMBIL SHIFT DENGAN PROBABILITAS TERTINGGI
+) pred
+ON pred.id_karyawan = base.id_karyawan
+AND pred.tanggal = base.Tanggal
+
+ORDER BY base.Nama, base.Tanggal;

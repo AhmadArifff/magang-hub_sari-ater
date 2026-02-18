@@ -1,23 +1,12 @@
 // src/pages/Croscek.jsx
 // import { useState, useEffect } from "react";
 import { useState, useEffect, useMemo } from "react";
-import { UploadCloud, FileSpreadsheet, ArrowRight, Search, X, Calendar,Users,CheckCircle,Plus, Trash2, Download } from "lucide-react";
+import { UploadCloud, FileSpreadsheet, ArrowRight, Search, X, Plus, Trash2, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import sariAter from "../assets/sari-ater.png";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import logoCompany from "../assets/Image/logo.jpg";
-// import { 
-//   // FileSpreadsheet, 
-//   // X, 
-//   // Download, 
-//   Trash2, 
-//   Calendar,        // ✅ Tambahkan ini
-//   Users,           // Optional: untuk icon tambahan
-//   Clock,           // Optional: untuk icon tambahan
-//   CheckCircle,     // Optional: untuk icon tambahan
-//   AlertCircle      // Optional: untuk icon tambahan
-// } from 'lucide-react';
 
 
 export default function Croscek() {
@@ -1862,7 +1851,6 @@ export default function Croscek() {
                 r.Prediksi_Actual_Pulang
               );
               result[nik] = {
-                statusKehadiranUpper :r.Status_Kehadiran === "Tidak Hadir" ? "TIDAK HADIR" : (r.Status_Kehadiran || "").trim().toUpperCase(),
                 NIK: nik,
                 Nama: r.Nama || "",
                 Jabatan: r.Jabatan || "",
@@ -2022,13 +2010,13 @@ export default function Croscek() {
                 fgColor: { argb: "FFFFFF99" } // kuning
               };
             }
-            else if (emp.statusKehadiranUpper === "TIDAK HADIR") {
-              cellHadir.fill = {
-                type: "pattern",
-                pattern: "solid",
-                fgColor: { argb: "FFFFFF99" } // kuning
-              };
-            }
+            // else if (emp.hadir === 0) {
+            //   cellHadir.fill = {
+            //     type: "pattern",
+            //     pattern: "solid",
+            //     fgColor: { argb: "FFFFFF99" } // kuning
+            //   };
+            // }
 
             ws.getCell(`H${currentRow}`).value = emp.off === 0 ? "" : emp.off;
             ws.getCell(`I${currentRow}`).value = emp.sakit === 0 ? "" : emp.sakit;
@@ -4428,641 +4416,6 @@ function buildRekapUangMakanData({
 
 
 
-// State untuk HOD Modal
-const [isHodModalOpen, setIsHodModalOpen] = useState(false);
-const [hodStartDate, setHodStartDate] = useState('');
-const [hodEndDate, setHodEndDate] = useState('');
-const [karyawanOptions, setKaryawanOptions] = useState([]);
-const [selectedKaryawan, setSelectedKaryawan] = useState('');
-const [hodTableData, setHodTableData] = useState([]);
-const [hodSelectedIds, setHodSelectedIds] = useState(new Set());
-const [loadingHod, setLoadingHod] = useState(false);
-// Tambahkan state ini di bagian atas component
-const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-const [searchKaryawan, setSearchKaryawan] = useState('');
-const [filteredKaryawan, setFilteredKaryawan] = useState([]);
-// Filter karyawan berdasarkan search
-useEffect(() => {
-  if (searchKaryawan) {
-    const filtered = karyawanOptions.filter(item =>
-      item.label.toLowerCase().includes(searchKaryawan.toLowerCase())
-    );
-    setFilteredKaryawan(filtered);
-  } else {
-    setFilteredKaryawan(karyawanOptions);
-  }
-}, [searchKaryawan, karyawanOptions]);
-// Close dropdown saat klik di luar
-useEffect(() => {
-  const handleClickOutside = (event) => {
-    if (isDropdownOpen && !event.target.closest('.searchable-select')) {
-      setIsDropdownOpen(false);
-      setSearchKaryawan('');
-    }
-  };
-
-  document.addEventListener('mousedown', handleClickOutside);
-  return () => document.removeEventListener('mousedown', handleClickOutside);
-}, [isDropdownOpen]);
-// =====================
-// OPEN MODAL HOD
-// =====================
-const openHodModal = () => {
-  setIsHodModalOpen(true);
-  loadKaryawanSelect();
-};
-
-const closeHodModal = () => {
-  setIsHodModalOpen(false);
-};
-
-// =====================
-// RESET HOD DATA
-// =====================
-const resetHodData = () => {
-  if (window.confirm("Apakah Anda yakin ingin mereset semua data? Data yang sudah dipilih akan hilang.")) {
-    setHodTableData([]);
-    setHodSelectedIds(new Set());
-    setSelectedKaryawan('');
-    setHodStartDate('');
-    setHodEndDate('');
-  }
-};
-
-// =====================
-// LOAD KARYAWAN SELECT
-// =====================
-const loadKaryawanSelect = async () => {
-  try {
-    const res = await fetch("/api/karyawan-select");
-    const data = await res.json();
-    setKaryawanOptions(data);
-  } catch (error) {
-    console.error("Error loading karyawan:", error);
-    alert("❌ Gagal memuat data karyawan!");
-  }
-};
-
-// =====================
-// ADD HOD DATA
-// =====================
-const addHodData = async (id_absen) => {
-  if (!id_absen) {
-    alert("❌ Silakan pilih karyawan terlebih dahulu!");
-    return;
-  }
-
-  // Validasi tanggal
-  if (!hodStartDate || !hodEndDate) {
-    alert("❌ Mohon isi Tanggal Mulai dan Tanggal Selesai terlebih dahulu!");
-    return;
-  }
-
-  const start = new Date(hodStartDate);
-  const end = new Date(hodEndDate);
-
-  if (start > end) {
-    alert("❌ Tanggal Mulai tidak boleh lebih besar dari Tanggal Selesai!");
-    return;
-  }
-
-  // Cek apakah karyawan sudah dipilih
-  if (hodSelectedIds.has(id_absen)) {
-    alert("⚠️ Karyawan ini sudah dipilih!");
-    setSelectedKaryawan('');
-    return;
-  }
-
-  setLoadingHod(true);
-  try {
-    const res = await fetch(
-      `/api/rekap-hod?id_absen=${id_absen}&start_date=${hodStartDate}&end_date=${hodEndDate}`
-    );
-    
-    if (!res.ok) {
-      throw new Error('Gagal mengambil data');
-    }
-    
-    const data = await res.json();
-
-    if (data.length === 0) {
-      alert("⚠️ Tidak ada data untuk karyawan ini pada periode yang dipilih!");
-      setSelectedKaryawan('');
-      setLoadingHod(false);
-      return;
-    }
-
-    // Tambahkan id_absen ke data untuk tracking
-    const dataWithId = data.map(item => ({
-      ...item,
-      id_absen: id_absen
-    }));
-
-    setHodSelectedIds(prev => new Set([...prev, id_absen]));
-    setHodTableData(prev => [...prev, ...dataWithId]);
-    setSelectedKaryawan('');
-    
-    // Success notification
-    const karyawan = karyawanOptions.find(k => k.value === id_absen);
-    alert(`✅ Data ${karyawan?.label} berhasil ditambahkan! (${data.length} record)`);
-    
-  } catch (error) {
-    console.error("Error fetching data:", error);
-    alert("❌ Gagal memuat data karyawan! Silakan coba lagi.");
-  } finally {
-    setLoadingHod(false);
-  }
-};
-
-// =====================
-// REMOVE ROW
-// =====================
-const removeHodRow = (index) => {
-  if (!window.confirm("Apakah Anda yakin ingin menghapus data ini?")) {
-    return;
-  }
-
-  const newData = [...hodTableData];
-  const removedItem = newData[index];
-  newData.splice(index, 1);
-  setHodTableData(newData);
-
-  // Cek apakah masih ada data dengan id_absen yang sama
-  const stillExists = newData.some(item => item.id_absen === removedItem.id_absen);
-  if (!stillExists) {
-    setHodSelectedIds(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(removedItem.id_absen);
-      return newSet;
-    });
-  }
-};
-
-// =====================
-// REMOVE KARYAWAN (Hapus semua data karyawan tertentu)
-// =====================
-const removeKaryawan = (id_absen) => {
-  const karyawan = karyawanOptions.find(k => k.value === id_absen);
-  
-  if (!window.confirm(`Apakah Anda yakin ingin menghapus semua data ${karyawan?.label}?`)) {
-    return;
-  }
-
-  const newData = hodTableData.filter(item => item.id_absen !== id_absen);
-  setHodTableData(newData);
-  
-  setHodSelectedIds(prev => {
-    const newSet = new Set(prev);
-    newSet.delete(id_absen);
-    return newSet;
-  });
-};
-
-// =====================
-// CLEAR ALL DATA
-// =====================
-const clearAllHodData = () => {
-  if (!window.confirm("Apakah Anda yakin ingin menghapus SEMUA data?")) {
-    return;
-  }
-  
-  setHodTableData([]);
-  setHodSelectedIds(new Set());
-  setSelectedKaryawan('');
-};
-
-// =====================
-// DOWNLOAD EXCEL
-// =====================
-const downloadHodExcel = async () => {
-  // Validasi data
-  if (hodTableData.length === 0) {
-    alert("❌ Tidak ada data untuk diexport! Silakan pilih karyawan terlebih dahulu.");
-    return;
-  }
-
-  if (!hodStartDate || !hodEndDate) {
-    alert("❌ Tanggal tidak valid!");
-    return;
-  }
-
-  try {
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet("Rekap HOD");
-    
-    // Format waktu jadi HH:mm:ss
-    const formatTime = (value) => {
-      if (!value || value === "-" || value === null) return "-";
-
-      // Kalau sudah format HH:mm:ss, langsung return
-      if (/^\d{2}:\d{2}:\d{2}$/.test(value)) {
-        return value;
-      }
-
-      const d = new Date(value);
-      if (isNaN(d)) return value;
-
-      return d.toLocaleTimeString("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-      });
-    };
-
-    // ========================================
-    // STEP 1: PERSIAPAN DATA
-    // ========================================
-    
-    // Generate array tanggal dari startDate ke endDate
-    const dates = [];
-    const currentDate = new Date(hodStartDate);
-    const endDateObj = new Date(hodEndDate);
-    
-    while (currentDate <= endDateObj) {
-      dates.push(new Date(currentDate));
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    // Group data by karyawan
-    const karyawanMap = new Map();
-    hodTableData.forEach(item => {
-      const key = `${item.nama}-${item.jabatan}-${item.departemen}`;
-      if (!karyawanMap.has(key)) {
-        karyawanMap.set(key, {
-          nama: item.nama,
-          jabatan: item.jabatan,
-          departemen: item.departemen,
-          data: {}
-        });
-      }
-      
-      // Parse tanggal dari format "dd-mm-yyyy" ke "yyyy-mm-dd"
-      let tanggalKey = item.tanggal;
-      if (item.tanggal && item.tanggal.includes('-')) {
-        const parts = item.tanggal.split('-');
-        if (parts.length === 3) {
-          tanggalKey = `${parts[2]}-${parts[1]}-${parts[0]}`; // yyyy-mm-dd
-        }
-      }
-      
-      // ✅ AMBIL SHIFT DAN STATUS KEHADIRAN
-      const shiftRaw = (item.shift || "").toUpperCase().trim();
-      const statusKehadiran = (item.status_kehadiran || "").trim();
-
-      // ✅ MAPPING KODE SHIFT KE STATUS UNTUK DITAMPILKAN
-      const getDisplayStatus = (shift, statusKehadiran) => {
-        // Cek kode shift dulu
-        if (shift === "X") return "OFF";
-        if (shift === "EO" || shift === "OF1") return "Extraoff";
-        if (shift === "CTT") return "Cuti Tahunan";
-        if (shift === "CT") return "Cuti Istimewa";
-        if (shift === "CTB") return "Cuti Bersama";
-        if (shift === "DL") return "Izin Dinas Luar";
-        
-        // Kalau shift bukan kode khusus, cek status kehadiran
-        if (statusKehadiran) {
-          const s = statusKehadiran.toUpperCase();
-          if (s === "LIBUR") return "OFF";
-          if (s === "EXTRAOFF") return "Extraoff";
-          if (s.includes("CUTI TAHUNAN")) return "Cuti Tahunan";
-          if (s.includes("CUTI ISTIMEWA")) return "Cuti Istimewa";
-          if (s.includes("CUTI BERSAMA")) return "Cuti Bersama";
-          if (s.includes("CUTI")) return "Cuti";
-          if (s.includes("SAKIT")) return "Izin Sakit";
-          if (s.includes("IZIN")) return "Izin";
-          if (s.includes("DINAS")) return "Izin Dinas Luar";
-          if (s === "ALPA" || s === "TIDAK HADIR") return "Alpa";
-        }
-        
-        return null; // Hadir normal
-      };
-
-      const finalStatus = getDisplayStatus(shiftRaw, statusKehadiran);
-
-      // ✅ DEBUGGING - log semua data
-      console.log(`Processing: ${item.nama} - ${tanggalKey}`, {
-        shift: shiftRaw,
-        statusKehadiran: statusKehadiran,
-        finalStatus: finalStatus
-      });
-
-      karyawanMap.get(key).data[tanggalKey] = {
-        shift: item.shift || '-',
-        check_in: formatTime(item.check_in),
-        check_out: formatTime(item.check_out),
-        status: finalStatus,
-        status_kehadiran: statusKehadiran
-      };
-    });
-
-    const karyawanList = Array.from(karyawanMap.values());
-    const totalColumns = 4 + (dates.length * 3);
-
-    // ========================================
-    // STEP 2: BARIS 1-3 - TITLE
-    // ========================================
-    
-    const lastColIndex = totalColumns;
-
-    // Logo + header (sama style)
-    try {
-      const base64 = await imageToBase64(logoCompany);
-      const imageId = wb.addImage({ base64, extension: "jpg" });
-      ws.mergeCells("A1:A2");
-      ws.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 40, height: 40 } });
-      ws.getRow(1).height = 18;
-      ws.getRow(2).height = 18;
-    } catch (e) { 
-      console.warn("Gagal load logo:", e); 
-    }
-
-    ws.mergeCells(1, 2, 1, lastColIndex);
-    ws.getCell("B1").value = { 
-      richText: [
-        { text: "Sari Ater ", font: { name: "Times New Roman", size: 9, color: { argb: "FF23FF23" }, underline: true } },
-        { text: "Hot Spring Ciater", font: { name: "Mistral", size: 9, color: { argb: "FFFF0000" }, italic: true, underline: true } }
-      ]
-    };
-    ws.getCell("B1").alignment = { vertical: "left", horizontal: "left" };
-
-    ws.mergeCells(2, 2, 2, lastColIndex);
-    ws.getCell("B2").value = "Human Resources Department";
-    ws.getCell("B2").font = { name: "Arial", size: 8, bold: true };
-    ws.getCell("B2").alignment = { vertical: "left", horizontal: "left" };
-
-    // Row 3: Title "REKAPITULASI HARIAN HOD"
-    ws.mergeCells(3, 1, 3, lastColIndex);
-    ws.getCell('A3').value = 'REKAPITULASI HARIAN HOD';
-    ws.getCell('A3').font = { name: "Times New Roman", bold: true, size: 16, italic: true };
-    ws.getCell('A3').alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getCell('A3').fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFD9D9D9' }
-    };
-    ws.getRow(3).height = 30;
-
-    // ========================================
-    // STEP 3: BARIS 4-6 - HEADERS
-    // ========================================
-
-    // Set column widths
-    ws.getColumn(1).width = 6;
-    ws.getColumn(2).width = 25;
-    ws.getColumn(3).width = 20;
-    ws.getColumn(4).width = 15;
-
-    for (let i = 0; i < dates.length; i++) {
-      const startCol = 5 + (i * 3);
-      ws.getColumn(startCol).width = 12;
-      ws.getColumn(startCol + 1).width = 10;
-      ws.getColumn(startCol + 2).width = 10;
-    }
-
-    // Row 4: Header pertama
-    ws.mergeCells('A4:A6');
-    ws.getCell('A4').value = 'No';
-    ws.getCell('A4').font = { name: "Times New Roman", bold: true, size: 11, italic: true };
-    ws.getCell('A4').alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getCell('A4').fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFD9D9D9' }
-    };
-
-    ws.mergeCells('B4:B6');
-    ws.getCell('B4').value = 'Nama Karyawan';
-    ws.getCell('B4').font = { name: "Times New Roman", bold: true, size: 11, italic: true };
-    ws.getCell('B4').alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getCell('B4').fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFD9D9D9' }
-    };
-
-    ws.mergeCells('C4:C6');
-    ws.getCell('C4').value = 'Jabatan';
-    ws.getCell('C4').font = { name: "Times New Roman", bold: true, size: 11, italic: true };
-    ws.getCell('C4').alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getCell('C4').fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFD9D9D9' }
-    };
-
-    ws.mergeCells('D4:D6');
-    ws.getCell('D4').value = 'Dept';
-    ws.getCell('D4').font = { name: "Times New Roman", bold: true, size: 11, italic: true };
-    ws.getCell('D4').alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getCell('D4').fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFD9D9D9' }
-    };
-
-    const firstDateCol = 'E';
-    ws.mergeCells(4, 5, 4, lastColIndex);
-    ws.getCell(`${firstDateCol}4`).value = 'Tanggal';
-    ws.getCell(`${firstDateCol}4`).font = { name: "Times New Roman", bold: true, size: 11, italic: true };
-    ws.getCell(`${firstDateCol}4`).alignment = { vertical: 'middle', horizontal: 'center' };
-    ws.getCell(`${firstDateCol}4`).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFD9D9D9' }
-    };
-
-    // Row 5: Tanggal spesifik
-    dates.forEach((date, index) => {
-      const startCol = 5 + (index * 3);
-      const endCol = startCol + 2;
-
-      ws.mergeCells(5, startCol, 5, endCol);
-      
-      const formattedDate = date.toLocaleDateString('id-ID', { 
-        day: '2-digit', 
-        month: 'long', 
-        year: 'numeric' 
-      });
-      
-      ws.getCell(5, startCol).value = formattedDate;
-      ws.getCell(5, startCol).font = { name: "Times New Roman", bold: true, size: 10, italic: true };
-      ws.getCell(5, startCol).alignment = { vertical: 'middle', horizontal: 'center' };
-      ws.getCell(5, startCol).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFD9D9D9' }
-      };
-    });
-
-    // Row 6: Header detail
-    dates.forEach((date, index) => {
-      const startCol = 5 + (index * 3);
-      
-      ws.getCell(6, startCol).value = 'Jadwal';
-      ws.getCell(6, startCol).font = { name: "Times New Roman", bold: true, size: 10, italic: true };
-      ws.getCell(6, startCol).alignment = { vertical: 'middle', horizontal: 'center' };
-      ws.getCell(6, startCol).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFD9D9D9' }
-      };
-      
-      ws.getCell(6, startCol + 1).value = 'Cek In';
-      ws.getCell(6, startCol + 1).font = { name: "Times New Roman", bold: true, size: 10, italic: true };
-      ws.getCell(6, startCol + 1).alignment = { vertical: 'middle', horizontal: 'center' };
-      ws.getCell(6, startCol + 1).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFD9D9D9' }
-      };
-      
-      ws.getCell(6, startCol + 2).value = 'Cek Out';
-      ws.getCell(6, startCol + 2).font = { name: "Times New Roman", bold: true, size: 10, italic: true };
-      ws.getCell(6, startCol + 2).alignment = { vertical: 'middle', horizontal: 'center' };
-      ws.getCell(6, startCol + 2).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFD9D9D9' }
-      };
-    });
-
-    ws.getRow(4).height = 25;
-    ws.getRow(5).height = 25;
-    ws.getRow(6).height = 25;
-
-    // ========================================
-    // STEP 4: DATA ROWS
-    // ========================================
-
-    const mergedCells = new Set();
-
-    let currentRow = 7;
-    karyawanList.forEach((karyawan, index) => {
-      const row = ws.getRow(currentRow);
-      
-      row.getCell(1).value = index + 1;
-      row.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
-      
-      row.getCell(2).value = karyawan.nama;
-      row.getCell(2).alignment = { vertical: 'middle', horizontal: 'left' };
-      row.getCell(2).font = { name: "Times New Roman", italic: true };
-      
-      row.getCell(3).value = karyawan.jabatan;
-      row.getCell(3).alignment = { vertical: 'middle', horizontal: 'center' };
-      row.getCell(3).font = { name: "Times New Roman", italic: true };
-      
-      row.getCell(4).value = karyawan.departemen;
-      row.getCell(4).alignment = { vertical: 'middle', horizontal: 'center' };
-      row.getCell(4).font = { name: "Times New Roman", italic: true };
-      
-      // Data per tanggal
-      dates.forEach((date, dateIndex) => {
-        const dateKey = date.toISOString().split('T')[0];
-        const data = karyawan.data[dateKey] || { shift: '-', check_in: '-', check_out: '-', status: null };
-
-        const startCol = 5 + (dateIndex * 3);
-
-        // ✅ DEBUGGING LEBIH DETAIL
-        if (data.status) {
-          console.log(`✅ DETECTED STATUS at Row ${currentRow}, Col ${startCol}:`, {
-            nama: karyawan.nama,
-            tanggal: dateKey,
-            status: data.status,
-            shift: data.shift
-          });
-        }
-
-        // ===============================
-        // JIKA STATUS KEHADIRAN KHUSUS
-        // ===============================
-        if (data.status) {
-          const colStart = startCol;
-          const colEnd = startCol + 2;
-
-          // ✅ MERGE DULU SEBELUM SET VALUE
-          const key = `${currentRow}-${colStart}-${colEnd}`;
-          if (!mergedCells.has(key)) {
-            ws.mergeCells(currentRow, colStart, currentRow, colEnd);
-            mergedCells.add(key);
-            console.log(`✅ Merged cells: Row ${currentRow}, Col ${colStart} to ${colEnd}`);
-          }
-
-          // ✅ SET VALUE SETELAH MERGE
-          const cell = row.getCell(colStart);
-          cell.value = data.status;
-          cell.alignment = { vertical: "middle", horizontal: "center" };
-          cell.font = { name: "Times New Roman", italic: true, bold: true };
-          
-          console.log(`✅ Set value "${data.status}" at Row ${currentRow}, Col ${colStart}`);
-        }
-        // ===============================
-        // JIKA HADIR NORMAL
-        // ===============================
-        else {
-          row.getCell(startCol).value = data.shift;
-          row.getCell(startCol).alignment = { vertical: 'middle', horizontal: 'center' };
-          row.getCell(startCol).font = { name: "Times New Roman", italic: true };
-
-          row.getCell(startCol + 1).value = data.check_in;
-          row.getCell(startCol + 1).alignment = { vertical: 'middle', horizontal: 'center' };
-          row.getCell(startCol + 1).font = { name: "Times New Roman", italic: true };
-
-          row.getCell(startCol + 2).value = data.check_out;
-          row.getCell(startCol + 2).alignment = { vertical: 'middle', horizontal: 'center' };
-          row.getCell(startCol + 2).font = { name: "Times New Roman", italic: true };
-        }
-      });
-      
-      row.height = 22;
-      currentRow++;
-    });
-
-    // ========================================
-    // STEP 5: BORDERS & FOOTER
-    // ========================================
-
-    for (let rowNum = 3; rowNum < currentRow; rowNum++) {
-      const row = ws.getRow(rowNum);
-      for (let colNum = 1; colNum <= totalColumns; colNum++) {
-        const cell = row.getCell(colNum);
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FF000000' } },
-          left: { style: 'thin', color: { argb: 'FF000000' } },
-          bottom: { style: 'thin', color: { argb: 'FF000000' } },
-          right: { style: 'thin', color: { argb: 'FF000000' } }
-        };
-      }
-    }
-
-    const footerRow = currentRow + 2;
-    ws.mergeCells(footerRow, 1, footerRow, lastColIndex);
-    ws.getCell(`A${footerRow}`).value = `Total Karyawan: ${karyawanList.length} | Periode: ${formatDate(hodStartDate)} s/d ${formatDate(hodEndDate)} | Dicetak: ${new Date().toLocaleString('id-ID')}`;
-    ws.getCell(`A${footerRow}`).font = { italic: true, size: 9, color: { argb: 'FF6B7280' } };
-    ws.getCell(`A${footerRow}`).alignment = { vertical: 'middle', horizontal: 'center' };
-
-    // ========================================
-    // STEP 6: SAVE FILE
-    // ========================================
-
-    const buffer = await wb.xlsx.writeBuffer();
-    const fileName = `Rekapitulasi_HOD_${hodStartDate}_to_${hodEndDate}.xlsx`;
-    saveAs(new Blob([buffer]), fileName);
-    
-    alert(`✅ File berhasil didownload!\n📊 Total: ${karyawanList.length} karyawan\n📅 Periode: ${dates.length} hari`);
-    
-  } catch (error) {
-    console.error("Error downloading Excel:", error);
-    alert("❌ Gagal mendownload file Excel! Error: " + error.message);
-  }
-};
-
-// Helper function untuk format tanggal
-const formatDate = (dateString) => {
-  const options = { day: '2-digit', month: 'long', year: 'numeric' };
-  return new Date(dateString).toLocaleDateString('id-ID', options);
-};
-
 
 
 
@@ -5071,221 +4424,30 @@ const formatDate = (dateString) => {
   // RENDER
   // -----------------------------------------
   return (
-    <div className="w-full bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
-        {/* HEADER */}
-          <div className="relative bg-gradient-to-br from-white via-gray-50 to-blue-50 p-5 md:p-7 rounded-3xl shadow-2xl hover:shadow-3xl flex flex-col md:flex-row md:items-center gap-5 m-6 overflow-hidden transition-all duration-300 ease-in-out hover:scale-[1.02] border border-gray-100 group"
-            style={{
-              backgroundImage: 'url(https://png.pngtree.com/thumb_back/fh260/background/20241008/pngtree-breathtaking-panoramic-view-of-a-summer-landscape-featuring-majestic-waterfalls-charming-image_16334134.jpg)',
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              backgroundAttachment: 'fixed'
-            }}>
-            
-            {/* Dark Overlay untuk Text Readability */}
-            <div className="absolute inset-0 bg-black/40 rounded-3xl group-hover:bg-black/35 transition-all duration-300 pointer-events-none" />
+    <div className="w-full">
+      {/* HEADER */}
+      <div className="bg-white p-5 md:p-7 rounded-2xl shadow-md flex flex-col md:flex-row md:items-center gap-5">
+        <img src={sariAter} className="w-20 md:w-28" alt="logo" />
+        <div>
+          <h1 className="text-2xl font-bold">Croscek Kehadiran</h1>
+          <p className="text-gray-600">
+            Upload jadwal & kehadiran, lalu lakukan proses croscek.
+          </p>
+        </div>
+      </div>
 
-            {/* Orbital Ring Layer 1 - Outer */}
-            <div className="absolute inset-0 pointer-events-none">
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] border-2 border-transparent rounded-full opacity-0 group-hover:opacity-40 transition-opacity duration-500"
-            style={{
-              borderImage: 'linear-gradient(45deg, #06b6d4, #3b82f6, #a855f7) 1',
-              animation: 'orbitRotate 20s linear infinite',
-              boxShadow: '0 0 40px rgba(6, 182, 212, 0.3), inset 0 0 40px rgba(59, 130, 246, 0.2)'
-            }}/>
-            </div>
-
-            {/* Orbital Ring Layer 2 - Middle */}
-            <div className="absolute inset-0 pointer-events-none">
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] h-[95%] border border-transparent rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-500"
-            style={{
-              borderImage: 'linear-gradient(225deg, #a855f7, #06b6d4, #3b82f6) 1',
-              animation: 'orbitRotate 30s linear infinite reverse',
-              boxShadow: '0 0 30px rgba(168, 85, 247, 0.25)'
-            }}/>
-            </div>
-
-            {/* Energy Wave Layer - Animated Gradient */}
-            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-500"
-              style={{
-            background: 'linear-gradient(90deg, transparent, rgba(6, 182, 212, 0.15), transparent)',
-            animation: 'energyWave 4s ease-in-out infinite',
-            backdropFilter: 'blur(0px)'
-              }}/>
-
-            {/* Particle Glow Points */}
-            <div className="absolute inset-0 pointer-events-none">
-              {/* Particle 1 */}
-              <div className="absolute w-2 h-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-            style={{
-              background: 'radial-gradient(circle, #06b6d4, transparent)',
-              boxShadow: '0 0 20px #06b6d4, 0 0 40px rgba(6, 182, 212, 0.6)',
-              animation: 'particleOrbit 12s linear infinite',
-              top: '50%',
-              left: '50%',
-              transformOrigin: '0 -60px'
-            }}/>
-              
-              {/* Particle 2 */}
-              <div className="absolute w-1.5 h-1.5 rounded-full opacity-0 group-hover:opacity-80 transition-opacity duration-500"
-            style={{
-              background: 'radial-gradient(circle, #3b82f6, transparent)',
-              boxShadow: '0 0 15px #3b82f6, 0 0 30px rgba(59, 130, 246, 0.5)',
-              animation: 'particleOrbit 15s linear infinite reverse',
-              animationDelay: '3s',
-              top: '50%',
-              left: '50%',
-              transformOrigin: '0 -45px'
-            }}/>
-              
-              {/* Particle 3 */}
-              <div className="absolute w-1 h-1 rounded-full opacity-0 group-hover:opacity-70 transition-opacity duration-500"
-            style={{
-              background: 'radial-gradient(circle, #a855f7, transparent)',
-              boxShadow: '0 0 12px #a855f7, 0 0 25px rgba(168, 85, 247, 0.4)',
-              animation: 'particleOrbit 18s linear infinite',
-              animationDelay: '6s',
-              top: '50%',
-              left: '50%',
-              transformOrigin: '0 -75px'
-            }}/>
-            </div>
-
-            {/* Glow Aura Background */}
-            <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-50 transition-opacity duration-700"
-              style={{
-            background: 'radial-gradient(ellipse 80% 40% at 50% 50%, rgba(6, 182, 212, 0.1), rgba(168, 85, 247, 0.05), transparent)',
-            animation: 'glowPulse 4s ease-in-out infinite'
-              }}/>
-
-            {/* Logo dengan hover effect dan glow */}
-            <img 
-              src={sariAter} 
-              className="w-20 md:w-28 relative z-10 transition-all duration-500 ease-out hover:scale-110 hover:rotate-6 drop-shadow-lg group-hover:drop-shadow-[0_0_20px_rgba(6,182,212,0.6)]" 
-              style={{
-            animation: 'logoFloat 3s ease-in-out infinite'
-              }}
-              alt="logo" 
-            />
-            
-            {/* Text Content */}
-            <div className="relative z-10">
-              <h1 className="text-3xl font-bold text-white drop-shadow-lg hover:text-cyan-200 transition-all duration-500"
-            style={{
-              textShadow: '2px 2px 8px rgba(0, 0, 0, 0.7), 0 0 20px rgba(6, 182, 212, 0.3)',
-              animation: 'titleShimmer 3s ease-in-out infinite'
-            }}>
-            Croscek Kehadiran
-              </h1>
-              <p className="text-gray-100 mt-1 drop-shadow-md hover:text-cyan-100 transition-colors duration-300"
-            style={{
-              textShadow: '1px 1px 4px rgba(0, 0, 0, 0.8)',
-              animation: 'descriptionSlide 3s ease-in-out infinite'
-            }}>
-            Upload jadwal & kehadiran, lalu lakukan proses croscek untuk validasi data.
-              </p>
-            </div>
-
-            {/* CSS Animations */}
-            <style>{`
-              @keyframes orbitRotate {
-            from {
-              transform: rotate(0deg);
-            }
-            to {
-              transform: rotate(360deg);
-            }
-              }
-
-              @keyframes particleOrbit {
-            from {
-              transform: translate(0, 0) rotate(0deg);
-            }
-            to {
-              transform: translate(0, 0) rotate(360deg);
-            }
-              }
-
-              @keyframes energyWave {
-            0% {
-              transform: translateX(-100%);
-              opacity: 0;
-            }
-            50% {
-              opacity: 1;
-            }
-            100% {
-              transform: translateX(100%);
-              opacity: 0;
-            }
-              }
-
-              @keyframes glowPulse {
-            0%, 100% {
-              opacity: 0.3;
-              transform: scale(1);
-            }
-            50% {
-              opacity: 0.6;
-              transform: scale(1.1);
-            }
-              }
-
-              @keyframes logoFloat {
-            0%, 100% {
-              transform: translateY(0px);
-            }
-            50% {
-              transform: translateY(-8px);
-            }
-              }
-
-              @keyframes titleShimmer {
-            0%, 100% {
-              backgroundPosition: 0% 50%;
-            }
-            50% {
-              backgroundPosition: 100% 50%;
-            }
-              }
-
-              @keyframes descriptionSlide {
-            0%, 100% {
-              opacity: 0.7;
-              transform: translateX(0);
-            }
-            50% {
-              opacity: 1;
-              transform: translateX(4px);
-            }
-              }
-
-              .shadow-3xl {
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 
-                0 10px 20px -8px rgba(59, 130, 246, 0.15);
-              }
-
-              .group:hover .shadow-3xl {
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.3),
-                0 10px 20px -8px rgba(6, 182, 212, 0.3),
-                0 0 60px rgba(6, 182, 212, 0.2),
-                inset 0 0 40px rgba(59, 130, 246, 0.05);
-              }
-            `}</style>
-          </div>
-
-          {/* UPLOAD JADWAL */}
-      <div className="mt-6 mx-6 flex flex-col md:flex-row gap-4">
-        <label className="block w-full border-2 border-dashed border-blue-400 hover:border-blue-600 hover:bg-blue-50 cursor-pointer rounded-2xl p-10 text-center transition duration-300">
+      {/* UPLOAD JADWAL */}
+      <div className="mt-6 flex flex-col md:flex-row gap-4">
+        <label className="block w-full border-2 border-dashed border-blue-500 hover:bg-blue-50 cursor-pointer rounded-xl p-10 text-center transition">
           <UploadCloud size={45} className="text-blue-600 mx-auto" />
-          <p className="text-gray-700 font-semibold mt-3">Upload File Jadwal</p>
-          <p className="text-xs text-gray-500 mt-1">Format: Excel (.xlsx, .xls)</p>
+          <p className="text-gray-700 font-medium mt-3">Upload File Jadwal</p>
           <input type="file" onChange={handleUploadJadwal} className="hidden" />
         </label>
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
           <select
             value={selectedMonth}
             onChange={handleMonthChange}
-            className="border-2 border-gray-300 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition duration-200"
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
           >
             <option value={0}>Januari</option>
             <option value={1}>Februari</option>
@@ -5302,7 +4464,7 @@ const formatDate = (dateString) => {
           </select>
           <button
             onClick={exportTemplateJadwal}
-            className="flex items-center justify-center gap-2 bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl text-sm md:text-base font-semibold transition duration-300 transform hover:scale-105"
+            className="flex items-center justify-center gap-2 bg-[#1BA39C] hover:bg-[#158f89] text-white px-6 py-4 rounded-xl shadow-md text-sm md:text-base"
           >
             <Download size={20} />
             Download Template Excel
@@ -5310,39 +4472,38 @@ const formatDate = (dateString) => {
         </div>
       </div>
 
+
       {loadingJadwal && (
-        <div className="mt-6 mx-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg flex items-center gap-3">
-          <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-          <p className="text-blue-700 font-medium">Memproses file jadwal...</p>
-        </div>
+        <p className="mt-3 text-center text-gray-600">Memproses file jadwal...</p>
       )}
 
       {jadwalPreview && (
-        <div className="bg-white mt-6 mx-6 p-6 rounded-2xl shadow-lg border-t-4 border-blue-500">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold flex items-center gap-2 text-gray-800">
-              <div className="p-2 bg-blue-100 rounded-lg"><FileSpreadsheet className="text-blue-700" size={24} /></div>
-              Preview Jadwal
+        <div className="bg-white mt-6 p-5 rounded-2xl shadow-md">
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="text-lg font-bold flex items-center gap-2">
+              <FileSpreadsheet className="text-blue-700" /> Preview Jadwal
             </h2>
             <button
               onClick={saveJadwal}
               disabled={savingJadwal}
-              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-6 py-2 rounded-xl shadow-md hover:shadow-lg font-semibold transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700"
             >
-              {savingJadwal ? "Menyimpan..." : "✓ Simpan Jadwal"}
+              {savingJadwal ? "Menyimpan..." : "Simpan Jadwal"}
             </button>
           </div>
           <div
-            className="overflow-auto max-h-[500px] border-2 border-gray-200 rounded-xl p-4 text-xs bg-gray-50 hover:bg-white transition duration-200"
+            className="overflow-auto max-h-[500px] border rounded-xl p-3 text-xs"
             dangerouslySetInnerHTML={{ __html: jadwalPreview }}
           />
         </div>
       )}
 
-      {/* TABEL CRUD JADWAL KARYAWAN */}
-      <div className="bg-white mt-10 mx-6 p-6 rounded-2xl shadow-lg border-t-4 border-green-500">
-        <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
-          <h2 className="text-xl font-bold text-gray-800">📅 Data Jadwal Karyawan</h2>
+      {/* TAMBAHAN: TABEL CRUD JADWAL KARYAWAN */}
+      <div className="bg-white mt-10 p-4 md:p-6 rounded-2xl shadow-md">
+        <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-3">
+          {/* LEFT */}
+          <h2 className="text-xl font-bold">Data Jadwal Karyawan</h2>
+          {/* Filter bulan */}
           <select
             value={`${selectedMonthJadwal}-${selectedYearJadwal}`}
             onChange={(e) => {
@@ -5350,7 +4511,7 @@ const formatDate = (dateString) => {
               setSelectedMonthJadwal(bulan);
               setSelectedYearJadwal(tahun);
             }}
-            className="border-2 border-gray-300 rounded-xl px-4 py-2 text-sm font-medium focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200 transition duration-200"
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
           >
             {availablePeriodsJadwal.length > 0 ? (
               availablePeriodsJadwal.map((period, index) => (
@@ -5365,17 +4526,21 @@ const formatDate = (dateString) => {
               <option disabled>Tidak ada periode tersedia</option>
             )}
           </select>
-          <div className="flex items-center gap-3 relative flex-wrap">
+          {/* RIGHT */}
+          <div className="flex items-center gap-2 relative">
+            {/* Search */}
             <input
               type="text"
-              placeholder="🔍 Cari data jadwal..."
-              className="border-2 border-gray-300 px-4 py-2 rounded-xl text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200 transition duration-200"
+              placeholder="Cari data jadwal..."
+              className="border px-3 py-2 rounded-lg text-sm"
               value={searchJadwal}
               onChange={(e) => {
                 setSearchJadwal(e.target.value);
                 setPageJadwal(1);
               }}
             />
+
+            {/* ROWS PER PAGE */}
             <select
               value={rowsPerPageJadwal}
               onChange={(e) => {
@@ -5383,122 +4548,129 @@ const formatDate = (dateString) => {
                 setRowsPerPageJadwal(val === "ALL" ? "ALL" : Number(val));
                 setPageJadwal(1);
               }}
-              className="border-2 border-gray-300 rounded-xl px-3 py-2 text-sm font-medium focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200 transition duration-200"
+              className="border border-gray-300 rounded-lg px-2 py-2 text-sm"
             >
-              <option value={5}>5 Baris</option>
-              <option value={10}>10 Baris</option>
-              <option value={25}>25 Baris</option>
-              <option value={50}>50 Baris</option>
-              <option value="ALL">Semua</option>
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value="ALL">All</option>
             </select>
-            <div className="relative">
-              <button
-                onClick={() => setShowActionMenu(prev => !prev)}
-                className="p-2 rounded-xl hover:bg-gray-100 border-2 border-gray-300 font-bold transition duration-200 hover:border-gray-400"
-              >
-                ⋮
-              </button>
-              {showActionMenu && (
-                <div className="absolute right-0 top-12 w-48 bg-white border-2 border-gray-200 rounded-xl shadow-xl z-50">
-                  <button
-                    onClick={() => {
-                      setShowModalTambah(true);
-                      setShowActionMenu(false);
-                    }}
-                    className="w-full px-4 py-3 text-left text-sm hover:bg-green-50 flex items-center gap-2 font-medium text-gray-700 border-b border-gray-100 transition duration-200"
-                  >
-                    ➕ Tambah Jadwal
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleKosongkanJadwal();
-                      setShowActionMenu(false);
-                    }}
-                    className="w-full px-4 py-3 text-left text-sm hover:bg-red-50 text-red-600 flex items-center gap-2 font-medium transition duration-200"
-                  >
-                    🗑 Kosongkan Jadwal
-                  </button>
-                </div>
-              )}
-            </div>
+
+            {/* KEBAB MENU */}
+            <button
+              onClick={() => setShowActionMenu(prev => !prev)}
+              className="p-2 rounded-lg hover:bg-gray-100 border"
+            >
+              ⋮
+            </button>
+
+            {/* DROPDOWN MENU */}
+            {showActionMenu && (
+              <div className="absolute right-0 top-12 w-44 bg-white border rounded-lg shadow-lg z-50">
+                <button
+                  onClick={() => {
+                    setShowModalTambah(true);
+                    setShowActionMenu(false);
+                  }}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                >
+                  ➕ Tambah Jadwal
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleKosongkanJadwal();
+                    setShowActionMenu(false);
+                  }}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-red-50 text-red-600 flex items-center gap-2"
+                >
+                  🗑 Kosongkan Jadwal
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border-2 border-gray-200">
-          <table className="min-w-full text-xs md:text-sm">
-            <thead className="bg-gradient-to-r from-green-500 to-green-600 text-white sticky top-0 z-20">
+        <div className="overflow-auto">
+          <table className="min-w-full border text-xs md:text-sm">
+            <thead className="bg-gray-100">
               <tr>
-                <th className="p-3 text-left font-semibold">No</th>
+                <th className="border p-2">No</th>
                 {colsJadwal.map(c => (
-                  <th key={c} className="p-3 text-left font-semibold">{c.replace("_", " ").toUpperCase()}</th>
+                  <th key={c} className="border p-2">{c.replace("_", " ")}</th>
                 ))}
-                <th className="p-3 text-center font-semibold">Action</th>
+                <th className="border p-2">Action</th>
               </tr>
             </thead>
             <tbody>
               {paginatedJadwal.map((item, index) => (
-                <tr key={item.no} className="border-b border-gray-200 hover:bg-green-50 transition duration-200 hover:shadow-sm">
-                  <td className="p-3 text-center font-semibold text-gray-700">
+                <tr key={item.no}>
+                  {/* <td className="border p-2 text-center">{(pageJadwal - 1) * rowsPerPageJadwal + index + 1}</td> */}
+                  <td className="border p-2 text-center">
                     {isAllRows
                       ? index + 1
                       : (pageJadwal - 1) * rowsPerPageJadwal + index + 1}
                   </td>
                   {colsJadwal.map(col => (
-                    <td className="p-3 text-gray-700" key={col}>
-                      {editingId === item.no ? (
-                        col === "kode_shift" ? (
-                          <select
-                            className="border-2 border-yellow-400 px-2 py-1 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-yellow-300"
-                            value={item[col] || ""}
-                            onChange={e => handleEditChange(item.no, col, e.target.value)}
-                          >
-                            <option value="">Pilih Shift</option>
-                            {kodeShiftOptions.map(k => (
-                              <option key={k} value={k}>{k}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type={col === "tanggal" ? "date" : "text"}
-                            className="border-2 border-yellow-400 px-2 py-1 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-yellow-300"
-                            value={item[col] || ""}
-                            onChange={e => handleEditChange(item.no, col, e.target.value)}
-                            disabled={col === "nik" || col === "nama"}
-                          />
-                        )
-                      ) : item[col]}
-                    </td>
-                  ))}
-                  <td className="p-3 flex gap-2 justify-center flex-wrap">
+                  <td className="border p-2" key={col}>
+                    {editingId === item.no ? (
+                      col === "kode_shift" ? (
+                        <select
+                          className="border px-2 py-1 w-full"
+                          value={item[col] || ""}
+                          onChange={e => handleEditChange(item.no, col, e.target.value)}
+                        >
+                          <option value="">Pilih Shift</option>
+                          {kodeShiftOptions.map(k => (
+                            <option key={k} value={k}>{k}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={col === "tanggal" ? "date" : "text"}
+                          className="border px-2 py-1 w-full"
+                          value={item[col] || ""}
+                          onChange={e => handleEditChange(item.no, col, e.target.value)}
+                          disabled={col === "nik" || col === "nama"} // nik & nama tidak bisa diedit
+                        />
+                      )
+                    ) : item[col]}
+                  </td>
+                ))}
+
+                  <td className="border p-2 flex gap-2">
                     {editingId === item.no ? (
                       <button
                         onClick={() => handleUpdate(item.no)}
                         disabled={loadingCRUD}
-                        className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg font-semibold transition duration-200 shadow-md hover:shadow-lg"
+                        className="bg-blue-600 text-white px-2 py-1 rounded"
                       >
-                        ✓ Update
+                        Update
                       </button>
                     ) : (
                       <button
                         onClick={() => setEditingId(item.no)}
-                        className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded-lg font-semibold transition duration-200 shadow-md hover:shadow-lg"
+                        className="bg-yellow-500 text-white px-2 py-1 rounded"
                       >
-                        ✏️ Edit
+                        Edit
                       </button>
                     )}
+
                     <button
                       onClick={() => handleDelete(item.no)}
-                      className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg flex items-center gap-1 font-semibold transition duration-200 shadow-md hover:shadow-lg"
+                      className="bg-red-600 text-white px-2 py-1 rounded flex items-center gap-1"
                     >
                       <Trash2 size={14} /> Hapus
                     </button>
                   </td>
                 </tr>
               ))}
+
               {filteredJadwal.length === 0 && (
                 <tr>
-                  <td className="border p-4 text-center text-gray-500 font-medium" colSpan={colsJadwal.length + 2}>
-                    📭 Tidak ada data ditemukan
+                  <td className="border p-4 text-center" colSpan={colsJadwal.length + 2}>
+                    Tidak ada data ditemukan.
                   </td>
                 </tr>
               )}
@@ -5507,59 +4679,77 @@ const formatDate = (dateString) => {
         </div>
 
         {!isAllRows && totalPagesJadwal > 1 && (
-          <div className="grid grid-cols-3 items-center mt-6 text-sm">
-            <div className="text-gray-700 font-medium">
-              Menampilkan {(pageJadwal - 1) * rowsPerPageJadwal + 1}–
-              {Math.min(pageJadwal * rowsPerPageJadwal, filteredJadwal.length)} dari {filteredJadwal.length}
+          <div className="grid grid-cols-3 items-center mt-4 text-sm">
+            
+            {/* Info kiri */}
+            <div className="text-gray-600">
+              Menampilkan{" "}
+              {(pageJadwal - 1) * rowsPerPageJadwal + 1}–
+              {Math.min(pageJadwal * rowsPerPageJadwal, filteredJadwal.length)}{" "}
+              dari {filteredJadwal.length} data
             </div>
-            <div className="flex justify-center gap-2">
+
+            {/* Pagination tengah */}
+            <div className="flex justify-center gap-1">
               <button
-                className="px-3 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 font-semibold transition duration-200"
+                className="px-3 py-1 border rounded disabled:opacity-50"
                 onClick={() => setPageJadwal(1)}
                 disabled={pageJadwal === 1}
               >
                 ⏮
               </button>
+
               <button
-                className="px-3 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 font-semibold transition duration-200"
+                className="px-3 py-1 border rounded disabled:opacity-50"
                 onClick={() => setPageJadwal(p => Math.max(p - 1, 1))}
                 disabled={pageJadwal === 1}
               >
-                ◀ Prev
+                Prev
               </button>
-              <span className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-bold">
-                {pageJadwal} / {totalPagesJadwal}
+
+              <span className="px-3 py-1 bg-green-600 text-white rounded">
+                {pageJadwal}
               </span>
+
               <button
-                className="px-3 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 font-semibold transition duration-200"
+                className="px-3 py-1 border rounded disabled:opacity-50"
                 onClick={() => setPageJadwal(p => Math.min(p + 1, totalPagesJadwal))}
                 disabled={pageJadwal === totalPagesJadwal}
               >
-                Next ▶
+                Next
               </button>
+
               <button
-                className="px-3 py-2 border-2 border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 font-semibold transition duration-200"
+                className="px-3 py-1 border rounded disabled:opacity-50"
                 onClick={() => setPageJadwal(totalPagesJadwal)}
                 disabled={pageJadwal === totalPagesJadwal}
               >
                 ⏭
               </button>
             </div>
+
+            {/* Spacer kanan */}
+            <div />
           </div>
         )}
-      </div>
+
+
+
+
+        </div>
 
       {/* MODAL TAMBAH JADWAL KARYAWAN */}
       {showModalTambah && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white p-8 rounded-2xl w-full max-w-md shadow-2xl border-t-4 border-green-500 animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <h3 className="text-2xl font-bold mb-6 text-gray-800">➕ Tambah Jadwal Karyawan</h3>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-xl w-full max-w-md">
+            <h3 className="text-xl font-bold mb-4">Tambah Jadwal Karyawan</h3>
 
-            <div className="relative w-full mb-4">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Nama Karyawan</label>
+            {/* SEARCH & SELECT NAMA */}
+            {/* INPUT NAMA */}
+            <div className="relative w-full">
               <input
                 type="text"
-                className="nama-input w-full border-2 border-gray-300 rounded-xl p-3 focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200 transition duration-200"
+                className="nama-input w-full border rounded p-2"
                 placeholder="Ketik nama..."
                 value={newData.nama}
                 onChange={(e) => {
@@ -5570,57 +4760,60 @@ const formatDate = (dateString) => {
               />
 
               {showNamaDropdown && (
-                <div className="nama-dropdown absolute z-50 bg-white border-2 border-green-400 rounded-xl shadow-lg max-h-72 overflow-y-auto w-full mt-1">
+                <div
+                  className="nama-dropdown absolute z-50 bg-white border rounded shadow-lg max-h-72 overflow-y-auto w-full"
+                >
                   {uniqueKaryawan
                     .filter(k =>
                       k.nama?.toLowerCase().includes(newData.nama.toLowerCase())
                     )
-                    .sort((a, b) => a.nama.localeCompare(b.nama))
+                    .sort((a, b) => a.nama.localeCompare(b.nama)) // bonus: urut A–Z
                     .map((item, idx) => (
                       <div
                         key={idx}
-                        className="p-3 hover:bg-green-100 cursor-pointer border-b border-gray-100 transition duration-150"
+                        className="p-2 hover:bg-blue-100 cursor-pointer"
                         onClick={() => {
                           setNewData({ ...newData, nama: item.nama, nik: item.nik });
                           setShowNamaDropdown(false);
                         }}
                       >
-                        <div className="font-semibold text-gray-800">{item.nama}</div>
-                        <div className="text-xs text-gray-500">{item.nik}</div>
+                        {item.nama} - {item.nik}
                       </div>
                     ))}
                 </div>
               )}
             </div>
 
+
+            {/* tampilkan nama terpilih */}
             {newData.nama && (
-              <p className="text-sm text-green-600 mb-4 p-2 bg-green-50 rounded-lg font-medium">
-                ✓ Dipilih: <b>{newData.nama}</b>
+              <p className="text-sm text-green-600 mb-3">
+                Dipilih: <b>{newData.nama}</b>
               </p>
             )}
 
-            <div className="mb-4">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Tanggal</label>
-              <input
-                type="date"
-                className="border-2 border-gray-300 rounded-xl px-4 py-3 w-full focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200 transition duration-200"
-                value={newData.tanggal}
-                onChange={(e) => setNewData({ ...newData, tanggal: e.target.value })}
-              />
-            </div>
+            {/* INPUT TANGGAL */}
+            <label className="text-sm font-medium">Tanggal</label>
+            <input
+              type="date"
+              className="border rounded-lg px-3 py-2 w-full mb-3"
+              value={newData.tanggal}
+              onChange={(e) => setNewData({ ...newData, tanggal: e.target.value })}
+            />
 
-            <div className="relative mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Kode Shift</label>
+            {/* SEARCH & SELECT KODE SHIFT */}
+            <div className="relative">
+              <label className="block text-sm font-medium">Kode Shift</label>
               <input
                 type="text"
                 placeholder="Cari kode shift..."
                 value={newData.kode_shift}
                 onFocus={() => setShowShiftDropdown(true)}
                 onChange={(e) => setSearchShift(e.target.value)}
-                className="border-2 border-gray-300 w-full p-3 rounded-xl shift-input focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200 transition duration-200"
+                className="border w-full p-2 rounded-lg shift-input"
               />
 
-              <div className={`absolute z-50 bg-white border-2 border-green-400 rounded-xl mt-1 w-full max-h-48 overflow-y-auto shadow-lg shift-dropdown ${showShiftDropdown ? '' : 'hidden'}`}>
+              <div className={`absolute z-50 bg-white border rounded-lg mt-1 w-full max-h-48 overflow-y-auto shadow-lg shift-dropdown ${showShiftDropdown ? '' : 'hidden'}`}>
                 {filteredShiftOptions
                   .filter(s => s.toLowerCase().includes(searchShift.toLowerCase()))
                   .map(s => (
@@ -5631,7 +4824,7 @@ const formatDate = (dateString) => {
                         setShowShiftDropdown(false);
                         setSearchShift("");
                       }}
-                      className="p-3 hover:bg-green-100 cursor-pointer border-b border-gray-100 transition duration-150"
+                      className="p-2 hover:bg-blue-100 cursor-pointer"
                     >
                       {s}
                     </div>
@@ -5639,24 +4832,25 @@ const formatDate = (dateString) => {
                 {filteredShiftOptions.filter(s =>
                   s.toLowerCase().includes(searchShift.toLowerCase())
                 ).length === 0 && (
-                  <div className="p-3 text-center text-gray-500">Shift tidak ditemukan</div>
+                  <div className="p-2 text-center text-gray-500">Shift tidak ditemukan</div>
                 )}
               </div>
             </div>
 
-            <div className="flex justify-end gap-3">
+            {/* tombol ACTION */}
+            <div className="flex justify-end gap-3 mt-4">
               <button
-                className="px-6 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-xl font-semibold transition duration-200 shadow-md hover:shadow-lg"
+                className="px-4 py-2 bg-gray-300 rounded-lg"
                 onClick={() => setShowModalTambah(false)}
               >
-                ✕ Batal
+                Batal
               </button>
               <button
-                className="px-6 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-semibold transition duration-200 shadow-md hover:shadow-lg disabled:opacity-50"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg"
                 onClick={handleCreate}
                 disabled={loadingCRUD}
               >
-                ✓ Simpan
+                Simpan
               </button>
             </div>
           </div>
@@ -5664,674 +4858,737 @@ const formatDate = (dateString) => {
       )}
 
       {/* UPLOAD KEHADIRAN */}
-      <div className="mt-10 mx-6 flex flex-col md:flex-row gap-4">
-        <label className="block w-full border-2 border-dashed border-emerald-400 hover:border-emerald-600 hover:bg-emerald-50 cursor-pointer rounded-2xl p-10 text-center transition duration-300">
-          <UploadCloud size={45} className="text-emerald-600 mx-auto" />
-          <p className="text-gray-700 font-semibold mt-3">Upload File Kehadiran</p>
-          <p className="text-xs text-gray-500 mt-1">Format: Excel (.xlsx, .xls)</p>
+      <div className="mt-10 flex flex-col md:flex-row gap-4">
+        <label className="block w-full border-2 border-dashed border-green-500 hover:bg-green-50 cursor-pointer rounded-xl p-10 text-center transition">
+          <UploadCloud size={45} className="text-green-600 mx-auto" />
+          <p className="text-gray-700 font-medium mt-3">Upload File Kehadiran</p>
           <input type="file" onChange={handleUploadKehadiran} className="hidden" />
         </label>
-        <div className="flex flex-col gap-3">
-          <select
-            value={`${selectedMonthKehadiran}-${selectedYearKehadiran}`}
-            onChange={(e) => {
-              const [bulan, tahun] = e.target.value.split("-").map(Number);
-              setSelectedMonthKehadiran(bulan);
-              setSelectedYearKehadiran(tahun);
-            }}
-            className="border-2 border-gray-300 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 transition duration-200"
-            disabled={loadingPeriods}
-          >
-            {availablePeriods.length > 0 ? (
-              availablePeriods.map((period, index) => (
-                <option
-                  key={index}
-                  value={`${period.bulan}-${period.tahun}`}
-                >
-                  {new Date(0, period.bulan - 1).toLocaleString("id-ID", {
-                    month: "long",
-                  })}{" "}
-                  {period.tahun}
-                </option>
-              ))
-            ) : (
-              <option disabled>Tidak ada data periode</option>
-            )}
-          </select>
+        <div className="flex flex-col gap-2">
+        {/* TAMBAHAN: SELECT BULAN (DINAMIS DARI DATA) */}
+        <select
+          value={`${selectedMonthKehadiran}-${selectedYearKehadiran}`}
+          onChange={(e) => {
+            const [bulan, tahun] = e.target.value.split("-").map(Number);
+            setSelectedMonthKehadiran(bulan);
+            setSelectedYearKehadiran(tahun);
+          }}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          disabled={loadingPeriods}
+        >
+          {availablePeriods.length > 0 ? (
+            availablePeriods.map((period, index) => (
+              <option
+                key={index}
+                value={`${period.bulan}-${period.tahun}`}
+              >
+                {new Date(0, period.bulan - 1).toLocaleString("id-ID", {
+                  month: "long",
+                })}{" "}
+                {period.tahun}
+              </option>
+            ))
+          ) : (
+            <option disabled>Tidak ada data periode</option>
+          )}
+        </select>
 
-          <button
-            onClick={exportTemplateKehadiran}
-            className="flex items-center justify-center gap-2 bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl text-sm md:text-base font-semibold transition duration-300 transform hover:scale-105"
-          >
-            <Download size={20} />
-            Download Template Excel
-          </button>
-
-          <button
-            onClick={handleDeleteKehadiranPeriod}
-            disabled={availablePeriods.length === 0}
-            className="flex items-center justify-center gap-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl text-sm md:text-base font-semibold transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            🗑 Hapus Data Periode
-          </button>
-        </div>
+        {/* TAMBAHAN: SELECT TAHUN (DINAMIS DARI DATA) - Opsional, jika bulan sudah mencakup tahun */}
+        {/* Jika perlu select tahun terpisah, tambahkan di sini, tapi untuk sekarang cukup bulan yang mencakup tahun */}
+        
+        {/* TAMBAHAN: BUTTON DOWNLOAD TEMPLATE */}
+        <button
+          onClick={exportTemplateKehadiran}
+          className="flex items-center justify-center gap-2 bg-[#1BA39C] hover:bg-[#158f89] text-white px-6 py-4 rounded-xl shadow-md text-sm md:text-base"
+        >
+          <Download size={20} />
+          Download Template Excel
+        </button>
+        
+        {/* TAMBAHAN: BUTTON HAPUS PERIODE */}
+        <button
+          onClick={handleDeleteKehadiranPeriod}
+          disabled={availablePeriods.length === 0}
+          className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-6 py-4 rounded-xl shadow-md text-sm md:text-base disabled:opacity-50"
+        >
+          🗑 Hapus Data Periode
+        </button>
+      </div>
+        {/* <button
+          onClick={exportTemplateKehadiran}
+          className="flex items-center justify-center gap-2 bg-[#1BA39C] hover:bg-[#158f89] text-white px-6 py-4 rounded-xl shadow-md text-sm md:text-base"
+        >
+          <Download size={20} />
+          Download Template Excel
+        </button> */}
       </div>
 
       {loadingKehadiran && (
-        <div className="mt-6 mx-6 p-4 bg-emerald-50 border-l-4 border-emerald-500 rounded-lg flex items-center gap-3">
-          <div className="animate-spin h-5 w-5 border-2 border-emerald-500 border-t-transparent rounded-full"></div>
-          <p className="text-emerald-700 font-medium">Memproses file kehadiran...</p>
-        </div>
+        <p className="mt-3 text-center text-gray-600">Memproses file kehadiran...</p>
       )}
 
       {kehadiranPreview && (
-        <div className="bg-white mt-6 mx-6 p-6 rounded-2xl shadow-lg border-t-4 border-emerald-500">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold flex items-center gap-2 text-gray-800">
-              <div className="p-2 bg-emerald-100 rounded-lg"><FileSpreadsheet className="text-emerald-700" size={24} /></div>
-              Preview Kehadiran
+        <div className="bg-white mt-6 p-5 rounded-2xl shadow-md">
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="text-lg font-bold flex items-center gap-2">
+              <FileSpreadsheet className="text-green-700" /> Preview Kehadiran
             </h2>
             <button
               onClick={saveKehadiran}
               disabled={savingKehadiran}
-              className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-6 py-2 rounded-xl shadow-md hover:shadow-lg font-semibold transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700"
             >
-              {savingKehadiran ? "Menyimpan..." : "✓ Simpan Kehadiran"}
+              {savingKehadiran ? "Menyimpan..." : "Simpan Kehadiran"}
             </button>
           </div>
           <div
-            className="overflow-auto max-h-[500px] border-2 border-gray-200 rounded-xl p-4 text-xs bg-gray-50 hover:bg-white transition duration-200"
+            className="overflow-auto max-h-[500px] border rounded-xl p-3 text-xs"
             dangerouslySetInnerHTML={{ __html: kehadiranPreview }}
           />
         </div>
       )}
 
       {/* PROSES CROSCEK */}
-      <div className="mt-10 mx-6 text-center mb-8">
+      <div className="mt-10 text-center">
         <button
-          disabled={processing}
+                    disabled={processing}
           onClick={prosesCroscek}
-          className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white px-8 py-4 rounded-xl shadow-lg hover:shadow-xl flex items-center mx-auto gap-3 font-bold transition duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
+          className="bg-purple-600 text-white px-6 py-3 rounded-xl shadow hover:bg-purple-700 disabled:opacity-50 flex items-center mx-auto gap-2"
         >
-          <span>🔄 Proses Croscek</span>
-          <ArrowRight size={22} />
+          Proses Croscek <ArrowRight size={20} />
         </button>
       </div>
 
+
       {/* MODAL PROGRESS BAR */}
       {showProgressModal && (
-        <>
-          <style>
-            {`
-              @keyframes spinSlow {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-              }
-
-              @keyframes shimmer {
-                0% { transform: translateX(-100%); }
-                100% { transform: translateX(100%); }
-              }
-
-              @keyframes pulseSoft {
-                0%, 100% { opacity: 1; }
-                50% { opacity: 0.5; }
-              }
-
-              @keyframes bounceDot {
-                0%, 80%, 100% { transform: translateY(0); }
-                40% { transform: translateY(-4px); }
-              }
-            `}
-          </style>
-
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-md flex justify-center items-center z-50">
-            <div className="bg-white p-8 rounded-2xl w-[420px] text-center shadow-2xl border border-gray-200 relative overflow-hidden">
-
-              {/* Glow Border */}
-              <div className="absolute inset-0 rounded-2xl border-2 border-transparent bg-gradient-to-r from-purple-500 via-pink-500 to-indigo-500 opacity-30 animate-pulse pointer-events-none"></div>
-
-              {/* Icon Loader */}
-              <div className="relative flex justify-center mb-4">
-                <div
-                  className="w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center"
-                  style={{ animation: "spinSlow 3s linear infinite" }}
-                >
-                  <svg
-                    className="w-8 h-8 text-purple-600"
-                    style={{ animation: "pulseSoft 1.5s ease-in-out infinite" }}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
-                    <circle cx="12" cy="12" r="9" />
-                  </svg>
-                </div>
-              </div>
-
-              {/* Title */}
-              <h3 className="text-xl font-bold text-gray-800 mb-1">
-                Memproses Croscek
-              </h3>
-
-              {/* Animated Text */}
-              <p className="text-gray-500 mb-6 font-medium">
-                Mengambil data dari database
-                <span
-                  className="inline-block ml-1"
-                  style={{ animation: "bounceDot 1.4s infinite" }}
-                >
-                  .
-                </span>
-                <span
-                  className="inline-block"
-                  style={{ animation: "bounceDot 1.4s infinite 0.2s" }}
-                >
-                  .
-                </span>
-                <span
-                  className="inline-block"
-                  style={{ animation: "bounceDot 1.4s infinite 0.4s" }}
-                >
-                  .
-                </span>
-              </p>
-
-              {/* Progress Bar */}
-              <div className="w-full bg-gray-200 rounded-full h-4 mb-3 overflow-hidden relative">
-                <div
-                  className="h-4 rounded-full bg-gradient-to-r from-purple-500 via-pink-500 to-indigo-500 transition-all duration-500 ease-out shadow-lg"
-                  style={{ width: `${progress}%` }}
-                ></div>
-
-                {/* Shimmer Effect */}
-                <div
-                  className="absolute inset-0 bg-white/20"
-                  style={{ animation: "shimmer 2s linear infinite" }}
-                ></div>
-              </div>
-
-              {/* Percentage */}
-              <p className="text-sm font-semibold text-purple-600 tracking-wide">
-                {progress}% selesai
-              </p>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+          <div className="bg-white p-6 rounded-xl w-96 text-center">
+            <h3 className="text-lg font-bold mb-4">Memproses Croscek...</h3>
+            <p className="text-gray-600 mb-4">Mengambil data dari database, mohon tunggu.</p>
+            <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
+              <div
+                className="bg-blue-600 h-4 rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              ></div>
             </div>
+            <p className="text-sm text-gray-500">{progress}% selesai</p>
           </div>
-        </>
+        </div>
       )}
 
 
-      {/* MODAL PROGRESS BAR CROSCEK */}
+      {/* ======================================================= */}
+      {/* 📌 MODAL PREVIEW CROSCEK (dengan tambahan filter tanggal dan export) */}
+      {/* ======================================================= */}
       {showProgressModalCroscek && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[9999]">
-          <div className="bg-white w-96 p-8 rounded-2xl shadow-2xl border-t-4 border-green-500 animate-in fade-in scale-in duration-300">
-            <h2 className="text-xl font-bold mb-4 text-center text-gray-800">💾 Menyimpan Croscek</h2>
-            <div className="w-full bg-gray-200 rounded-full h-5 overflow-hidden border-2 border-gray-300 mb-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
+          <div className="bg-white w-96 p-6 rounded-lg shadow-xl">
+            <h2 className="text-lg font-semibold mb-4 text-center">
+              Menyimpan Croscek
+            </h2>
+
+            <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
               <div
-                className="bg-gradient-to-r from-green-500 to-green-600 h-5 transition-all duration-300"
+                className="bg-green-500 h-4 transition-all duration-300"
                 style={{ width: `${progressCroscek}%` }}
               />
             </div>
-            <p className="text-sm text-center font-semibold text-gray-700">
+
+            <p className="text-sm mt-3 text-center">
               {progressTextCroscek}
             </p>
           </div>
         </div>
       )}
 
-      {/* MODAL PREVIEW CROSCEK */}
+
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 p-4 flex items-center justify-center">
-          <div className="bg-white w-full max-w-[95vw] h-[92vh] rounded-2xl shadow-2xl flex flex-col border-t-4 border-purple-500 animate-in fade-in slide-in-from-bottom-4 duration-300">
-            
+        // <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        //   <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-xl shadow-lg overflow-hidden flex flex-col">
+  //       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50">
+  // <         div className="bg-white w-screen h-screen flex flex-col">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 p-6">
+            <div className="bg-white w-full h-full max-w-[95vw] max-h-[92vh] mx-auto rounded-2xl shadow-xl flex flex-col">
             {/* HEADER */}
-            <div className="p-6 border-b-2 border-gray-200 flex justify-between items-center bg-gradient-to-r from-gray-50 to-white">
-              <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                <span className="text-purple-600">📊</span> Hasil Croscek Kehadiran
-              </h2>
+            <div className="p-4 border-b flex justify-between items-center">
+              <h2 className="text-xl font-bold">Preview Hasil Croscek</h2>
               <button
                 onClick={() => setShowModal(false)}
-                className="p-2 hover:bg-red-100 rounded-full transition duration-200"
+                className="p-2 hover:bg-gray-200 rounded-full"
               >
-                <X size={28} className="text-red-500" />
+                <X />
               </button>
             </div>
 
-            {/* FILTER SECTION */}
-            <div className="p-5 border-b-2 border-gray-200 bg-gray-50 flex flex-wrap items-center gap-3">
-              <Search size={20} className="text-gray-600" />
+            {/* SEARCH DAN FILTER TANGGAL */}
+            <div className="p-4 flex items-center gap-2 border-b">
+              <Search />
               <input
                 type="text"
-                placeholder="🔍 Cari nama / tanggal..."
-                className="border-2 border-gray-300 p-3 rounded-xl flex-1 min-w-[200px] focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition duration-200 font-medium"
+                placeholder="Cari nama / tanggal..."
+                className="border p-2 rounded w-full"
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
                   setPage(1);
                 }}
               />
-              <div className="flex items-center gap-2 bg-white border-2 border-gray-300 rounded-xl px-3 py-2">
-                <label className="font-semibold text-sm text-gray-700 whitespace-nowrap">Dari:</label>
-                <input
-                  type="date"
-                  className="border-0 focus:outline-none focus:ring-0 p-1 text-sm"
-                  value={startDate}
-                  onChange={(e) => {
-                    setStartDate(e.target.value);
-                    setPage(1);
-                  }}
-                />
-              </div>
-              <div className="flex items-center gap-2 bg-white border-2 border-gray-300 rounded-xl px-3 py-2">
-                <label className="font-semibold text-sm text-gray-700 whitespace-nowrap">Hingga:</label>
-                <input
-                  type="date"
-                  className="border-0 focus:outline-none focus:ring-0 p-1 text-sm"
-                  value={endDate}
-                  onChange={(e) => {
-                    setEndDate(e.target.value);
-                    setPage(1);
-                  }}
-                />
-              </div>
+              {/* Tambahan: Input Tanggal Awal */}
+              <label className="ml-4">Tanggal Awal:</label>
+              <input
+                type="date"
+                className="border p-2 rounded"
+                value={startDate}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  setPage(1);
+                }}
+              />
+              {/* Tambahan: Input Tanggal Akhir */}
+              <label className="ml-2">Tanggal Akhir:</label>
+              <input
+                type="date"
+                className="border p-2 rounded"
+                value={endDate}
+                onChange={(e) => {
+                  setEndDate(e.target.value);
+                  setPage(1);
+                }}
+              />
             </div>
 
-            {/* TABLE CONTAINER */}
-            <div className="overflow-auto flex-1 p-4">
-              <div className="rounded-xl border-2 border-gray-200 overflow-hidden">
-                <table className="min-w-full text-sm bg-white">
-                  <thead className="bg-gradient-to-r from-purple-600 to-purple-700 text-white sticky top-0 z-20">
-                    <tr>
-                      <th className="p-3 text-left font-semibold whitespace-nowrap">👤 Nama</th>
-                      <th className="p-3 text-left font-semibold whitespace-nowrap">📅 Tanggal</th>
-                      <th className="p-3 text-left font-semibold whitespace-nowrap">⏰ Shift</th>
-                      <th className="p-3 text-left font-semibold whitespace-nowrap">🔄 Prediksi Shift</th>
-                      <th className="p-3 text-left font-semibold whitespace-nowrap">💼 Jabatan</th>
-                      <th className="p-3 text-left font-semibold whitespace-nowrap">🏢 Departemen</th>
-                      <th className="p-3 text-center font-semibold whitespace-nowrap">📥 Jadwal Masuk</th>
-                      <th className="p-3 text-center font-semibold whitespace-nowrap">📤 Jadwal Pulang</th>
-                      <th className="p-3 text-center font-semibold whitespace-nowrap">✅ Aktual Masuk</th>
-                      <th className="p-3 text-center font-semibold whitespace-nowrap">✅ Aktual Pulang</th>
-                      <th className="p-3 text-center font-semibold whitespace-nowrap">📍 Status Kehadiran</th>
-                      <th className="p-3 text-center font-semibold whitespace-nowrap">⏱ Status Masuk</th>
-                      <th className="p-3 text-center font-semibold whitespace-nowrap">⏱ Status Pulang</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginated.map((row, i) => (
-                      <tr
-                        key={i}
-                        className={`border-b border-gray-200 transition duration-200 ${
-                          isTidakHadir(row)
-                            ? "bg-red-200 hover:bg-red-300"
-                            : !isTidakHadir(row) &&
-                              (isHadirBermasalah(row) || isActualKosong(row))
-                            ? "bg-yellow-200 hover:bg-yellow-300"
-                            : "hover:bg-gray-100"
-                        }`}
-                      >
-                        <td className="p-3 font-semibold text-gray-800 whitespace-nowrap">{row.Nama}</td>
-                        <td className="p-3 whitespace-nowrap"><span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-lg text-xs font-semibold">{row.Tanggal}</span></td>
-                        <td className="p-3"><span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-lg text-xs font-semibold">{row.Kode_Shift}</span></td>
-                        <td className="p-3 text-center">
-                          {row.Prediksi_Shift === null ||
-                          row.Prediksi_Shift === undefined ||
-                          row.Prediksi_Shift === '' ||
-                          row.Prediksi_Shift === 'NULL' ? (
-                            <span className="px-2 py-1 bg-green-100 text-green-800 rounded-lg text-xs font-semibold">✓ OK</span>
-                          ) : (
-                            <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-lg text-xs font-semibold">
-                              ⚠️ {row.Prediksi_Shift}
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3 text-gray-700">{row.Jabatan}</td>
-                        <td className="p-3 text-gray-700">{row.Departemen}</td>
-                        <td className="p-3 text-center text-gray-700 font-medium">{row.Jadwal_Masuk}</td>
-                        <td className="p-3 text-center text-gray-700 font-medium">{row.Jadwal_Pulang}</td>
-                        <td className="p-3 whitespace-nowrap text-center">
-                          {LIBUR_SHIFTS.includes(row.Kode_Shift)
+            {/* TABLE */}
+            <div className="overflow-auto p-4 flex-1">
+              <table className="min-w-full text-sm border">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="border p-2 whitespace-nowrap">Nama</th>
+                    <th className="border p-2 whitespace-nowrap">Tanggal</th>
+                    <th className="border p-2 whitespace-nowrap">Kode Shift</th>
+                    <th className="border p-2 whitespace-nowrap">Prediksi Pindah Shift</th>
+                    <th className="border p-2 whitespace-nowrap">Jabatan</th>
+                    <th className="border p-2 whitespace-nowrap">Departemen</th>
+                    <th className="border p-2 whitespace-nowrap">Jadwal Masuk</th>
+                    <th className="border p-2 whitespace-nowrap">Jadwal Pulang</th>
+                    <th className="border p-2 whitespace-nowrap">Aktual Masuk</th>
+                    <th className="border p-2 whitespace-nowrap">Aktual Pulang</th>
+                    <th className="border p-2 whitespace-nowrap">Status Kehadiran</th>
+                    <th className="border p-2 whitespace-nowrap">Status Masuk</th>
+                    <th className="border p-2 whitespace-nowrap">Status Pulang</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginated.map((row, i) => (
+                    // <tr key={i} className="hover:bg-gray-100">
+                    // <tr
+                    //   key={i}
+                    //   className={`
+                    //     transition-colors
+                    //     ${isTidakHadir(row) ? "bg-red-100 hover:bg-red-200" : ""}
+                    //     ${!isTidakHadir(row) && isHadirBermasalah(row) ? "bg-yellow-100 hover:bg-yellow-200" : ""}
+                    //     ${!isTidakHadir(row) && !isHadirBermasalah(row) ? "hover:bg-gray-100" : ""}
+                    //   `}
+                    // >
+                    <tr
+                      key={i}
+                      className={`
+                        transition-colors
+                        ${isTidakHadir(row) ? "bg-red-100 hover:bg-red-200" : ""}
+                        ${
+                          !isTidakHadir(row) &&
+                          (isHadirBermasalah(row) || isActualKosong(row))
+                            ? "bg-yellow-100 hover:bg-yellow-200"
+                            : ""
+                        }
+                        ${
+                          !isTidakHadir(row) &&
+                          !isHadirBermasalah(row) &&
+                          !isActualKosong(row)
+                            ? "hover:bg-gray-100"
+                            : ""
+                        }
+                      `}
+                    >
+                  {/* {dataWithUid.map((row) => (
+                    <tr
+                      key={row.__uid}
+                      className={`
+                        transition-colors
+                        ${isTidakHadir(row) ? "bg-red-100 hover:bg-red-200" : ""}
+                        ${!isTidakHadir(row) && isHadirBermasalah(row) ? "bg-yellow-100 hover:bg-yellow-200" : ""}
+                        ${!isTidakHadir(row) && !isHadirBermasalah(row) ? "hover:bg-gray-100" : ""}
+                      `}
+                    > */}
+                      <td className="border p-2">{row.Nama}</td>
+                      <td className="border p-2">{row.Tanggal}</td>
+                      <td className="border p-2">{row.Kode_Shift}</td>
+                      <td className="border p-2 text-center">
+                        {row.Prediksi_Shift === null ||
+                        row.Prediksi_Shift === undefined ||
+                        row.Prediksi_Shift === '' ||
+                        row.Prediksi_Shift === 'NULL' ? (
+                          <span className="text-green-600">✓ Tidak Ada</span>
+                        ) : (
+                          <span className="text-orange-600 font-semibold">
+                            {row.Prediksi_Shift}
+                          </span>
+                        )}
+                      </td>
+                      <td className="border p-2">{row.Jabatan}</td>
+                      <td className="border p-2">{row.Departemen}</td>
+                      <td className="border p-2">{row.Jadwal_Masuk}</td>
+                      <td className="border p-2">{row.Jadwal_Pulang}</td>
+                      {/* <td className="border p-2">{formatJam(row.Actual_Masuk)}</td>
+                      <td className="border p-2">{formatJam(row.Actual_Pulang)}</td> */}
+                      <td className="border p-2">
+                        {
+                          LIBUR_SHIFTS.includes(row.Kode_Shift)
                             ? (
                                 row.Prediksi_Actual_Masuk
                                   ? (
-                                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded-lg text-xs font-semibold">
-                                        📊 {renderPrediksi(row.Prediksi_Actual_Masuk, row.Probabilitas_Prediksi)}
+                                      <span className="text-green-600 font-semibold">
+                                        {renderPrediksi(
+                                          row.Prediksi_Actual_Masuk,
+                                          row.Probabilitas_Prediksi
+                                        )}
                                       </span>
                                     )
                                   : (
-                                      <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-lg text-xs font-semibold">
-                                        ⚠️ No Prediction
+                                      <span className="text-orange-600 font-semibold">
+                                        Tidak Ada Data Prediksi Actual Masuk
                                       </span>
                                     )
                               )
                             : (
-                                <span className="font-semibold text-gray-800">{formatJam(row.Actual_Masuk) || '-'}</span>
+                                row.Actual_Masuk
+                                  ? formatJam(row.Actual_Masuk)
+                                  : ''
                               )
-                          }
-                        </td>
-                        <td className="p-3 whitespace-nowraptext-center">
-                          {LIBUR_SHIFTS.includes(row.Kode_Shift)
+                        }
+                      </td>
+                      <td className="border p-2">
+                        {
+                          LIBUR_SHIFTS.includes(row.Kode_Shift)
                             ? (
                                 row.Prediksi_Actual_Pulang
                                   ? (
-                                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded-lg text-xs font-semibold">
-                                        📊 {renderPrediksi(row.Prediksi_Actual_Pulang, row.Probabilitas_Prediksi)}
+                                      <span className="text-green-600 font-semibold">
+                                        {renderPrediksi(
+                                          row.Prediksi_Actual_Pulang,
+                                          row.Probabilitas_Prediksi
+                                        )}
                                       </span>
                                     )
                                   : (
-                                      <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-lg text-xs font-semibold">
-                                        ⚠️ No Prediction
+                                      <span className="text-orange-600 font-semibold">
+                                        Tidak Ada Data Prediksi Actual Pulang
                                       </span>
                                     )
                               )
                             : (
-                                <span className="font-semibold text-gray-800">{formatJam(row.Actual_Pulang) || '-'}</span>
+                                row.Actual_Pulang
+                                  ? formatJam(row.Actual_Pulang)
+                                  : ''
                               )
-                          }
+                        }
+                      </td>
+
+                      <td className="border p-2">
+                        {row.Status_Kehadiran !== "Tidak Hadir" && row.Status_Kehadiran !== "ALPA" && row.Status_Kehadiran !== "SAKIT" && row.Status_Kehadiran !== "IZIN" && row.Status_Kehadiran !== "DINAS LUAR" && row.Status_Kehadiran !== "CUTI ISTIMEWA" && row.Status_Kehadiran !== "CUTI BERSAMA" && row.Status_Kehadiran !== "CUTI TAHUNAN" && row.Status_Kehadiran !== "EXTRAOFF" && row.Status_Kehadiran !== "LIBUR SETELAH MASUK DOBLE SHIFT" ? (
+                          row.Status_Kehadiran
+                        ) : (
+                          <select
+                          className="border p-1 rounded"
+                          value={reasonMap[row.__uid] || row.Status_Kehadiran || ""}
+                          onChange={(e) => setReasonMap({ ...reasonMap, [row.__uid]: e.target.value })}
+                          >
+                          <option value="">Pilih Keterangan</option>
+                          <option value="ALPA">ALPA</option>
+                          <option value="SAKIT">SAKIT</option>
+                          <option value="IZIN">IZIN</option>
+                          <option value="DINAS LUAR">DINAS LUAR</option>
+                          <option value="CUTI ISTIMEWA">CT</option>
+                          <option value="CUTI BERSAMA">CTB</option>
+                          <option value="CUTI TAHUNAN">CTT</option>
+                          <option value="EXTRAOFF">EO</option>
+                          <option value="LIBUR SETELAH MASUK DOBLE SHIFT">OF1</option>
+                          </select>
+                        )}
                         </td>
-                        <td className="p-3 text-center">
-                          {row.Status_Kehadiran !== "Tidak Hadir" && row.Status_Kehadiran !== "ALPA" && row.Status_Kehadiran !== "SAKIT" && row.Status_Kehadiran !== "IZIN" && row.Status_Kehadiran !== "DINAS LUAR" && row.Status_Kehadiran !== "CUTI ISTIMEWA" && row.Status_Kehadiran !== "CUTI BERSAMA" && row.Status_Kehadiran !== "CUTI TAHUNAN" && row.Status_Kehadiran !== "EXTRAOFF" && row.Status_Kehadiran !== "LIBUR SETELAH MASUK DOBLE SHIFT" ? (
-                            <span className="px-2 py-1 bg-green-100 text-green-800 rounded-lg text-xs font-semibold">{row.Status_Kehadiran}</span>
-                          ) : (
-                            <select
-                              className="border-2 border-yellow-400 p-2 rounded-lg bg-yellow-50 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-yellow-300"
-                              value={reasonMap[row.__uid] || row.Status_Kehadiran || ""}
-                              onChange={(e) => setReasonMap({ ...reasonMap, [row.__uid]: e.target.value })}
-                            >
-                              <option value="">Pilih</option>
-                              <option value="ALPA">ALPA</option>
-                              <option value="SAKIT">SAKIT</option>
-                              <option value="IZIN">IZIN</option>
-                              <option value="DINAS LUAR">DINAS LUAR</option>
-                              <option value="CUTI ISTIMEWA">CT</option>
-                              <option value="CUTI BERSAMA">CTB</option>
-                              <option value="CUTI TAHUNAN">CTT</option>
-                              <option value="EXTRAOFF">EO</option>
-                              <option value="LIBUR SETELAH MASUK DOBLE SHIFT">OF1</option>
-                            </select>
-                          )}
-                        </td>
-                        <td className="p-3 whitespace-nowrap text-center">
-                          {row.Status_Masuk !== "Masuk Telat" && row.Status_Masuk !== "TL 1 5 D" && row.Status_Masuk !== "TL 1 5 T" && row.Status_Masuk !== "TL 5 10 D" && row.Status_Masuk !== "TL 5 10 T" && row.Status_Masuk !== "TL 10 D" && row.Status_Masuk !== "TL 10 T" ? (
-                            <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${
-                              row.Status_Masuk === "Tidak Scan Masuk" 
-                                ? "bg-red-100 text-red-800" 
-                                : row.Status_Masuk === "Masuk Tepat Waktu"
-                                ? "bg-green-100 text-green-800"
-                                : "bg-blue-100 text-blue-800"
-                            }`}>
-                              {row.Status_Masuk === "Tidak Scan Masuk" ? "❌ Tidak Scan" : row.Status_Masuk || '✓ OK'}
-                            </span>
-                          ) : ((() => {
-                            const jadwal = row.Jadwal_Masuk;
-                            const actual = row.Actual_Masuk;
+                      {/* === STATUS MASUK (BENAR) === */}
+                      <td className="border p-2">
+                        {row.Status_Masuk !== "Masuk Telat" && row.Status_Masuk !== "TL 1 5 D" && row.Status_Masuk !== "TL 1 5 T" && row.Status_Masuk !== "TL 5 10 D" && row.Status_Masuk !== "TL 5 10 T" && row.Status_Masuk !== "TL 10 D" && row.Status_Masuk !== "TL 10 T"? (
+                          row.Status_Masuk
+                        ) : ((() => {
+                        const jadwal = row.Jadwal_Masuk;
+                        const actual = row.Actual_Masuk;
 
-                            if (!actual) return <span className="px-2 py-1 bg-red-100 text-red-800 rounded-lg text-xs font-semibold">❌ Tidak Scan</span>;
-                            if (!jadwal) return <span className="px-2 py-1 bg-green-100 text-green-800 rounded-lg text-xs font-semibold">✓ Tepat Waktu</span>;
+                        if (!actual) return "Tidak Scan Masuk";
+                        if (!jadwal) return "Masuk Tepat Waktu";
 
-                            const diff = diffMinutes(actual, jadwal);
-                            if (diff <= 0) return <span className="px-2 py-1 bg-green-100 text-green-800 rounded-lg text-xs font-semibold">✓ Tepat Waktu</span>;
+                        const diff = diffMinutes(actual, jadwal);
+                        if (diff <= 0) return "Masuk Tepat Waktu";
 
-                            let kategori = "";
-                            if (diff >= 0 && diff <= 4) {
-                              kategori = "1_5";
-                            } else if (diff >= 5 && diff <= 10) {
-                              kategori = "5_10";
-                            } else if (diff >= 10) {
-                              kategori = "10";
-                            }
-                            const saved = reasonMap[row.__uid]?.TL_Code || "";
+                        // let kategori = "";
+                        // if (diff <= 5) kategori = "1_5";
+                        // else if (diff <= 10) kategori = "5_10";
+                        // else kategori = "10";
 
-                            if (saved) {
-                              return <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-lg text-xs font-semibold">⏱ {saved.replaceAll("_", " ")}</span>;
-                            }
+                        let kategori = "";
 
-                            return (
-                              <select
-                                className="border-2 border-yellow-400 p-2 rounded-lg bg-yellow-50 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-yellow-300"
-                                value={(() => {
-                                  const dbValue = row.Status_Masuk || "";
-                                  if (dbValue === "TL 1 5 D") return "TL_1_5_D";
-                                  if (dbValue === "TL 1 5 T") return "TL_1_5_T";
-                                  if (dbValue === "TL 5 10 D") return "TL_5_10_D";
-                                  if (dbValue === "TL 5 10 T") return "TL_5_10_T";
-                                  if (dbValue === "TL 10 D") return "TL_10_D";
-                                  if (dbValue === "TL 10 T") return "TL_10_T";
-                                  return "";
-                                })()}
-                                onChange={(e) =>
-                                  setReasonMap({
-                                    ...reasonMap,
-                                    [row.__uid]: {
-                                      ...(reasonMap[row.__uid] || {}),
-                                      TL_Code: e.target.value
-                                    }
-                                  })
-                                }
-                              >
-                                <option value="">Pilih</option>
-                                {(kategori === "1_5" || kategori === "1 5") && (
-                                  <>
-                                    <option value="TL_1_5_D">1–5 Menit — Izin</option>
-                                    <option value="TL_1_5_T">1–5 Menit — Tanpa Izin</option>
-                                  </>
-                                )}
-                                {(kategori === "5_10" || kategori === "5 10") && (
-                                  <>
-                                    <option value="TL_5_10_D">5–10 Menit — Izin</option>
-                                    <option value="TL_5_10_T">5–10 Menit — Tanpa Izin</option>
-                                  </>
-                                )}
-                                {kategori === "10" && (
-                                  <>
-                                    <option value="TL_10_D">≥10 Menit — Izin</option>
-                                    <option value="TL_10_T">≥10 Menit — Tanpa Izin</option>
-                                  </>
-                                )}
-                              </select>
-                            );
-                          })())}
-                        </td>
-                        <td className="p-3 whitespace-nowrap text-center">
-                          {row.Status_Pulang !== "Pulang Terlalu Cepat" && row.Status_Pulang !== "Pulang Awal Dengan Izin" && row.Status_Pulang !== "Pulang Awal Tanpa Izin" ? (
-                            <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${
-                              row.Status_Pulang === "Tidak Scan Pulang" 
-                                ? "bg-red-100 text-red-800" 
-                                : row.Status_Pulang === "Pulang Tepat Waktu"
-                                ? "bg-green-100 text-green-800"
-                                : "bg-blue-100 text-blue-800"
-                            }`}>
-                              {row.Status_Pulang === "Tidak Scan Pulang" ? "❌ Tidak Scan" : row.Status_Pulang || '✓ OK'}
-                            </span>
-                          ) : (() => {
-                            const status = row.Status_Pulang || "";
-                            const saved = reasonMap[row.__uid]?.PA_Code;
+                        if (diff >= 0 && diff <= 4) {
+                          kategori = "1_5";
+                        } else if (diff >= 5 && diff <= 10) {
+                          kategori = "5_10";
+                        } else if (diff >= 10) {
+                          kategori = "10";
+                        }
+                        const saved = reasonMap[row.__uid]?.TL_Code || "";
 
-                            if (saved) {
-                              return <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-lg text-xs font-semibold">{saved === "PA_D" ? "🔔 Awal+Izin" : "🔔 Awal TanpaIzin"}</span>;
-                            }
+                        if (saved) {
+                        return saved.replaceAll("_", " ");
+                        }
 
-                            const valueFromDb = (() => {
-                              if (status === "Pulang Awal Dengan Izin") return "PA_D";
-                              if (status === "Pulang Awal Tanpa Izin") return "PA_T";
-                              return "";
-                            })();
-
-                            return (
-                              <select
-                                className="border-2 border-yellow-400 p-2 rounded-lg bg-yellow-50 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-yellow-300"
-                                value={valueFromDb}
-                                onChange={(e) =>
-                                  setReasonMap({
-                                    ...reasonMap,
-                                    [row.__uid]: {
-                                      ...(reasonMap[row.__uid] || {}),
-                                      PA_Code: e.target.value
-                                    }
-                                  })
-                                }
-                              >
-                                <option value="">Pilih</option>
-                                <option value="PA_D">Awal — Izin</option>
-                                <option value="PA_T">Awal — Tanpa Izin</option>
-                              </select>
-                            );
+                        return (
+                        <select
+                          className="border p-1 rounded"
+                          value={(() => {
+                          const dbValue = row.Status_Masuk || "";
+                          if (dbValue === "TL 1 5 D") return "TL_1_5_D";
+                          if (dbValue === "TL 1 5 T") return "TL_1_5_T";
+                          if (dbValue === "TL 5 10 D") return "TL_5_10_D";
+                          if (dbValue === "TL 5 10 T") return "TL_5_10_T";
+                          if (dbValue === "TL 10 D") return "TL_10_D";
+                          if (dbValue === "TL 10 T") return "TL_10_T";
+                          return "";
                           })()}
-                        </td>
-                      </tr>
-                    ))}
+                          onChange={(e) =>
+                          setReasonMap({
+                            ...reasonMap,
+                            [row.__uid]: {
+                            ...(reasonMap[row.__uid] || {}),
+                            TL_Code: e.target.value
+                            }
+                          })
+                          }
+                        >
+                          <option value="">Pilih Keterangan</option>
 
-                    {paginated.length === 0 && (
-                      <tr>
-                        <td colSpan="13" className="text-center p-8 text-gray-500 font-semibold">
-                          📭 Tidak ada data
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                          {(kategori === "1_5" || kategori === "1 5") && (
+                          <>
+                            <option value="TL_1_5_D">1–5 Menit — Dengan Izin</option>
+                            <option value="TL_1_5_T">1–5 Menit — Tanpa Izin</option>
+                          </>
+                          )}
+
+                          {(kategori === "5_10" || kategori === "5 10") && (
+                          <>
+                            <option value="TL_5_10_D">5–10 Menit — Dengan Izin</option>
+                            <option value="TL_5_10_T">5–10 Menit — Tanpa Izin</option>
+                          </>
+                          )}
+
+                          {kategori === "10" && (
+                          <>
+                            <option value="TL_10_D">≥10 Menit — Dengan Izin</option>
+                            <option value="TL_10_T">≥10 Menit — Tanpa Izin</option>
+                          </>
+                          )}
+                        </select>
+                        );
+                      })())}
+                      </td>
+                      {/* <td className="border p-2">{row.Status_Pulang}</td> */}
+                      <td className="border p-2">
+                        {row.Status_Pulang !== "Pulang Terlalu Cepat"
+                        && row.Status_Pulang !== "Pulang Awal Dengan Izin"
+                        && row.Status_Pulang !== "Pulang Awal Tanpa Izin" ? (
+                          row.Status_Pulang
+                        ) : (() => {
+                          const status = row.Status_Pulang || "";
+
+                          // === STATUS NORMAL → TEXT SAJA ===
+                          if (
+                            status !== "Pulang Terlalu Cepat" &&
+                            status !== "Pulang Awal Dengan Izin" &&
+                            status !== "Pulang Awal Tanpa Izin"
+                          ) {
+                            return status || "-";
+                          }
+
+                          // === AMBIL STATE (KAYA STATUS MASUK) ===
+                          const saved = reasonMap[row.__uid]?.PA_Code;
+
+                          if (saved) {
+                            return saved === "PA_D"
+                              ? "Pulang Awal Dengan Izin"
+                              : "Pulang Awal Tanpa Izin";
+                          }
+
+                          // === MAPPING DB → SELECT VALUE ===
+                          const valueFromDb = (() => {
+                            if (status === "Pulang Awal Dengan Izin") return "PA_D";
+                            if (status === "Pulang Awal Tanpa Izin") return "PA_T";
+                            return "";
+                          })();
+
+                          return (
+                            <select
+                              className="border p-1 rounded"
+                              value={valueFromDb}
+                              onChange={(e) =>
+                                setReasonMap({
+                                  ...reasonMap,
+                                  [row.__uid]: {
+                                    ...(reasonMap[row.__uid] || {}),
+                                    PA_Code: e.target.value
+                                  }
+                                })
+                              }
+                            >
+                              <option value="">Pilih Keterangan</option>
+                              <option value="PA_D">Pulang Awal — Dengan Izin</option>
+                              <option value="PA_T">Pulang Awal — Tanpa Izin</option>
+                            </select>
+                          );
+                        })()}
+
+                      </td>
+
+                    </tr>
+                  ))}
+
+                  {paginated.length === 0 && (
+                    <tr>
+                      <td colSpan="10" className="text-center p-4">
+                        Tidak ada data
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
 
-            {/* FOOTER */}
-            <div className="p-5 border-t-2 border-gray-200 bg-gradient-to-r from-gray-50 to-white flex flex-wrap justify-between items-center gap-4">
+            {/* EXPORT BUTTON DAN PAGINATION */}
+            <div className="p-4 border-t flex justify-between items-center">
               {/* Grup tombol kiri */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={exportFilteredData}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 rounded-xl shadow-md hover:shadow-lg transition duration-300 transform hover:scale-105"
-                >
-                  <FileSpreadsheet size={16} /> Export Excel
-                </button>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2 bg-white p-3 rounded-xl border shadow-sm">
+                    {/* Export Excel */}
+                    <button
+                      onClick={exportFilteredData}
+                      className="
+                        inline-flex items-center gap-2
+                        px-4 py-2 text-sm font-semibold
+                        text-white bg-emerald-600
+                        rounded-xl
+                        shadow-sm
+                        hover:bg-emerald-700 hover:shadow-md hover:-translate-y-[1px]
+                        active:translate-y-0
+                        transition-all duration-200
+                        focus:outline-none focus:ring-2 focus:ring-emerald-400
+                      "
+                    >
+                      <FileSpreadsheet size={16} />
+                      Export Excel
+                    </button>
 
-                <button
-                  onClick={exportRekapPerhari}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-xl shadow-md hover:shadow-lg transition duration-300 transform hover:scale-105"
-                >
-                  <FileSpreadsheet size={16} /> Rekap Harian
-                </button>
+                    {/* Rekap Harian */}
+                    <button
+                      onClick={exportRekapPerhari}
+                      className="
+                        inline-flex items-center gap-2
+                        px-4 py-2 text-sm font-semibold
+                        text-white bg-blue-600
+                        rounded-xl
+                        shadow-sm
+                        hover:bg-blue-700 hover:shadow-md hover:-translate-y-[1px]
+                        active:translate-y-0
+                        transition-all duration-200
+                        focus:outline-none focus:ring-2 focus:ring-blue-400
+                      "
+                    >
+                      <FileSpreadsheet size={16} />
+                      Rekap Harian
+                    </button>
 
-                <button
-                  onClick={exportRekapKehadiran}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 rounded-xl shadow-md hover:shadow-lg transition duration-300 transform hover:scale-105"
-                >
-                  <FileSpreadsheet size={16} /> Rekap Periode
-                </button>
+                    {/* Rekap Periode */}
+                    <button
+                      onClick={exportRekapKehadiran}
+                      className="
+                        inline-flex items-center gap-2
+                        px-4 py-2 text-sm font-semibold
+                        text-white bg-purple-600
+                        rounded-xl
+                        shadow-sm
+                        hover:bg-purple-700 hover:shadow-md hover:-translate-y-[1px]
+                        active:translate-y-0
+                        transition-all duration-200
+                        focus:outline-none focus:ring-2 focus:ring-purple-400
+                      "
+                    >
+                      <FileSpreadsheet size={16} />
+                      Rekap Periode
+                    </button>
 
-                <button
-                  onClick={exportRekapKehadiranYeartoDate}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 rounded-xl shadow-md hover:shadow-lg transition duration-300 transform hover:scale-105"
-                >
-                  <FileSpreadsheet size={16} /> Rekap YTD
-                </button>
+                    {/* Rekap YTD */}
+                    <button
+                      onClick={exportRekapKehadiranYeartoDate}
+                      className="
+                        inline-flex items-center gap-2
+                        px-4 py-2 text-sm font-semibold
+                        text-white bg-teal-600
+                        rounded-xl
+                        shadow-sm
+                        hover:bg-teal-700 hover:shadow-md hover:-translate-y-[1px]
+                        active:translate-y-0
+                        transition-all duration-200
+                        focus:outline-none focus:ring-2 focus:ring-teal-400
+                      "
+                    >
+                      <FileSpreadsheet size={16} />
+                      Rekap YTD
+                    </button>
 
-                <button
-                  onClick={exportFilteredDatabyshift}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-emerald-700 to-emerald-800 hover:from-emerald-800 hover:to-emerald-900 rounded-xl shadow-md hover:shadow-lg transition duration-300 transform hover:scale-105"
-                >
-                  <FileSpreadsheet size={16} /> Export Shift
-                </button>
+                    {/* Export Shift */}
+                    <button
+                      onClick={exportFilteredDatabyshift}
+                      className="
+                        inline-flex items-center gap-2
+                        px-4 py-2 text-sm font-semibold
+                        text-white bg-emerald-700
+                        rounded-xl
+                        shadow-sm
+                        hover:bg-emerald-800 hover:shadow-md hover:-translate-y-[1px]
+                        active:translate-y-0
+                        transition-all duration-200
+                        focus:outline-none focus:ring-2 focus:ring-emerald-500
+                      "
+                    >
+                      <FileSpreadsheet size={16} />
+                      Export Shift E1–E3 & 1–1A
+                    </button>
 
-                <button
-                  onClick={() => {
-                    const data = buildRekapServicePreview();
-                    if (!data) return;
-                    setRekapServicePreview(data);
-                    setActiveDept(Object.keys(data)[0]);
-                    setShowPreviewRekap(true);
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 rounded-xl shadow-md hover:shadow-lg transition duration-300 transform hover:scale-105"
-                  >
-                    <FileSpreadsheet size={16} /> Rekap Service
-                  </button>
-                  
-                  <button
-                    onClick={openHodModal}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-cyan-600 to-cyan-700 hover:from-cyan-700 hover:to-cyan-800 rounded-xl shadow-md hover:shadow-lg transition duration-300 transform hover:scale-105"
-                  >
-                    <FileSpreadsheet size={16} /> Rekap Harian HOD
-                  </button>
+                    <button
+                      // onClick={exportRekapService}
+                      onClick={() => {
+                        const data = buildRekapServicePreview();
+                        if (!data) return;
+                        setRekapServicePreview(data);
+                        setActiveDept(Object.keys(data)[0]);
+                        setShowPreviewRekap(true);
+                      }}
+                      className="
+                        inline-flex items-center gap-2
+                        px-4 py-2 text-sm font-semibold
+                        text-white bg-indigo-600
+                        rounded-xl
+                        shadow-sm
+                        hover:bg-indigo-700 hover:shadow-md hover:-translate-y-[1px]
+                        active:translate-y-0
+                        transition-all duration-200
+                        focus:outline-none focus:ring-2 focus:ring-indigo-400
+                      "
+                    >
+                      <FileSpreadsheet size={16} />
+                      Rekap Service
+                    </button>
 
-                  <button
-                    onClick={() => {
-                      const hasil = buildRekapUangMakanData({
-                        filteredData,
-                        reasonMap,
-                        startDate,
-                        endDate
-                      });
-                      setPreviewUangMakan(hasil);
-                      setShowPreviewUangMakan(true);
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 rounded-xl shadow-md hover:shadow-lg transition duration-300 transform hover:scale-105"
-                  >
-                    <FileSpreadsheet size={16} /> Rekap Uang Makan
-                  </button>
+                    <button
+                      onClick={() => {
+                        const hasil = buildRekapUangMakanData({
+                          filteredData,
+                          reasonMap,
+                          startDate,
+                          endDate
+                        });
 
-                <span className="h-8 w-px bg-gray-300 mx-2" />
+                        setPreviewUangMakan(hasil);
+                        setShowPreviewUangMakan(true);
+                      }}
+                      className="px-4 py-2 bg-amber-600 text-white rounded-xl"
+                    >
+                      Rekap Uang Makan
+                    </button>
 
-                <button
-                  onClick={simpanCroscek}
-                  className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 rounded-xl shadow-md hover:shadow-lg transition duration-300 transform hover:scale-105 border-2 border-green-700"
-                >
-                  💾 Simpan Croscek
-                </button>
-              </div>
 
+
+
+                    {/* Divider */}
+                    <span className="hidden sm:block h-8 w-px bg-gray-300 mx-1" />
+
+                    {/* Simpan Croscek */}
+                    <button
+                      onClick={simpanCroscek}
+                      className="
+                        inline-flex items-center gap-2
+                        px-4 py-2 text-sm font-semibold
+                        text-white bg-green-600
+                        rounded-xl
+                        shadow-sm
+                        hover:bg-green-700 hover:shadow-md hover:-translate-y-[1px]
+                        active:translate-y-0
+                        transition-all duration-200
+                        focus:outline-none focus:ring-2 focus:ring-green-400
+                      "
+                    >
+                      💾 Simpan Croscek
+                    </button>
+
+                  </div>
+
+
+                </div>
               {/* Navigasi halaman */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4">
                 <button
                   disabled={page === 1}
                   onClick={() => setPage(page - 1)}
-                  className="px-4 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-semibold transition duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-gray-200 rounded disabled:opacity-40"
                 >
-                  ◀ Prev
+                  Prev
                 </button>
 
-                <span className="px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg font-bold">
+                <span className="font-semibold">
                   {page} / {totalPages}
                 </span>
 
                 <button
                   disabled={page === totalPages}
                   onClick={() => setPage(page + 1)}
-                  className="px-4 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-semibold transition duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-gray-200 rounded disabled:opacity-40"
                 >
-                  Next ▶
+                  Next
                 </button>
               </div>
             </div>
+
           </div>
         </div>
       )}
-
-      {/* MODAL PREVIEW REKAP SERVICE */}
       {showPreviewRekap && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-[95vw] h-[90vh] rounded-2xl shadow-2xl flex flex-col border-t-4 border-indigo-500">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-[95vw] h-[90vh] rounded-xl shadow flex flex-col">
 
             {/* HEADER */}
-            <div className="p-6 border-b-2 border-gray-200 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-white">
-              <h2 className="font-bold text-2xl text-indigo-800 flex items-center gap-2">
-                <span>📊</span> Preview Rekap Service
-              </h2>
-              <button onClick={() => setShowPreviewRekap(false)} className="p-2 hover:bg-red-100 rounded-full transition duration-200">
-                <X size={28} className="text-red-500" />
+            <div className="p-4 border-b flex justify-between items-center">
+              <h2 className="font-bold text-lg">Preview Rekap Service</h2>
+              <button onClick={() => setShowPreviewRekap(false)}>
+                <X />
               </button>
             </div>
 
             {/* TAB SHEET */}
-            <div className="flex gap-2 p-4 border-b-2 border-gray-200 bg-gray-50 overflow-x-auto">
+            <div className="flex gap-2 p-3 border-b overflow-x-auto">
               {Object.keys(rekapServicePreview).map(dept => (
                 <button
                   key={dept}
                   onClick={() => setActiveDept(dept)}
-                  className={`px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition duration-200 ${
+                  className={`px-4 py-1 rounded ${
                     activeDept === dept
-                      ? "bg-indigo-600 text-white shadow-md"
-                      : "bg-white text-gray-700 border-2 border-gray-300 hover:border-indigo-400"
+                      ? "bg-indigo-600 text-white"
+                      : "bg-gray-200"
                   }`}
                 >
                   {dept}
@@ -6340,495 +5597,150 @@ const formatDate = (dateString) => {
             </div>
 
             {/* CONTENT */}
-            <div className="flex-1 overflow-auto p-6">
-              <div className="text-center font-bold text-xl text-gray-800 mb-2">
-                📊 REKAPITULASI LAYANAN
+            {/* <div className="flex-1 overflow-auto p-6">
+              <div className="text-center font-bold text-lg">
+                REKAPITULASI UANG MAKAN KARYAWAN
               </div>
-              <div className="text-center font-semibold mb-6 text-gray-600">
+              <div className="text-center font-bold mb-4">
                 PERIODE {startDate} s/d {endDate}
-              </div>
+              </div> */}
 
-              {/* TABLE PREVIEW */}
-              <div className="max-h-[600px] overflow-auto border-2 border-gray-200 rounded-xl">
-                <table className="min-w-full text-sm border-collapse bg-white">
-                  <thead className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white sticky top-0 z-10">
+            {/* TABLE PREVIEW */}
+            <div className="flex-1 overflow-auto p-4">
+              <div className="max-h-[650px] overflow-auto border rounded">
+                <table className="min-w-full text-sm border-collapse">
+                  <thead className="bg-gray-100 font-bold text-center sticky top-0 z-10">
                     <tr>
-                      <th className="border p-3 text-left font-semibold">NO</th>
-                      <th className="border p-3 text-left font-semibold">NAMA</th>
-                      <th className="border p-3 text-left font-semibold">JABATAN</th>
-                      <th className="border p-3 text-left font-semibold">NIK</th>
-                      <th className="border p-3 text-center font-semibold">JML HARI</th>
-                      <th className="border p-3 text-center font-semibold">LIBUR</th>
-                      <th className="border p-3 text-center font-semibold">HK</th>
-                      <th className="border p-3 text-center font-semibold">SAKIT</th>
-                      <th className="border p-3 text-center font-semibold">IZIN</th>
-                      <th className="border p-3 text-center font-semibold">ALPA</th>
-                      <th className="border p-3 text-center font-semibold">EO</th>
-                      <th className="border p-3 text-center font-semibold">CUTI</th>
-                      <th className="border p-3 text-center font-semibold">SERVICE</th>
+                      <th className="border p-2 sticky top-0 bg-gray-100">NO</th>
+                      <th className="border p-2 sticky top-0 bg-gray-100">NAMA</th>
+                      <th className="border p-2 sticky top-0 bg-gray-100">JABATAN</th>
+                      <th className="border p-2 sticky top-0 bg-gray-100">NIK</th>
+                      <th className="border p-2 sticky top-0 bg-gray-100">JML HARI</th>
+                      <th className="border p-2 sticky top-0 bg-gray-100">LIBUR</th>
+                      <th className="border p-2 sticky top-0 bg-gray-100">HK</th>
+                      <th className="border p-2 sticky top-0 bg-gray-100">SAKIT</th>
+                      <th className="border p-2 sticky top-0 bg-gray-100">IZIN</th>
+                      <th className="border p-2 sticky top-0 bg-gray-100">ALPA</th>
+                      <th className="border p-2 sticky top-0 bg-gray-100">EO</th>
+                      <th className="border p-2 sticky top-0 bg-gray-100">CUTI</th>
+                      <th className="border p-2 sticky top-0 bg-gray-100">SERVICE</th>
                     </tr>
                   </thead>
 
                   <tbody>
-                    {rekapServicePreview[activeDept]?.map((r, idx) => (
-                      <tr key={r.no} className={`border-b border-gray-200 transition duration-200 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-indigo-100`}>
-                        <td className="border p-3 text-center font-semibold text-gray-800">{r.no}</td>
-                        <td className="border p-3 text-gray-800 font-medium">{r.nama}</td>
-                        <td className="border p-3 text-gray-700">{r.jabatan}</td>
-                        <td className="border p-3 text-gray-700 font-mono">{r.nik}</td>
-                        <td className="border p-3 text-center font-bold text-gray-800">{r.totalHari}</td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-red-100 text-red-800 rounded-lg text-xs">{r.libur}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-green-100 text-green-800 rounded-lg text-xs">{r.hk}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-lg text-xs">{r.sakit}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-lg text-xs">{r.izin}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-red-100 text-red-800 rounded-lg text-xs">{r.alpa}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-lg text-xs">{r.eo}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-lg text-xs">{r.cuti}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-indigo-100 text-indigo-800 rounded-lg">{r.service}</span></td>
+                    {rekapServicePreview[activeDept]?.map(r => (
+                      <tr key={r.no} className="text-center hover:bg-gray-50">
+                        <td className="border p-1">{r.no}</td>
+                        <td className="border p-1 text-left">{r.nama}</td>
+                        <td className="border p-1">{r.jabatan}</td>
+                        <td className="border p-1">{r.nik}</td>
+                        <td className="border p-1">{r.totalHari}</td>
+                        <td className="border p-1">{r.libur}</td>
+                        <td className="border p-1 font-bold">{r.hk}</td>
+                        <td className="border p-1">{r.sakit}</td>
+                        <td className="border p-1">{r.izin}</td>
+                        <td className="border p-1">{r.alpa}</td>
+                        <td className="border p-1">{r.eo}</td>
+                        <td className="border p-1">{r.cuti}</td>
+                        <td className="border p-1 font-bold">{r.service}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </div>
+                </div>
+
             </div>
 
             {/* FOOTER */}
-            <div className="p-6 border-t-2 border-gray-200 bg-gradient-to-r from-gray-50 to-white flex justify-end gap-3">
-              <button
-                onClick={() => setShowPreviewRekap(false)}
-                className="px-6 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-xl font-semibold transition duration-200 shadow-md"
-              >
-                ✕ Tutup
-              </button>
+            <div className="p-4 border-t flex justify-end gap-2">
               <button
                 onClick={() => exportRekapService()}
-                className="px-6 py-2 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white rounded-xl font-semibold transition duration-200 shadow-lg hover:shadow-xl"
+                className="bg-green-600 text-white px-4 py-2 rounded"
               >
-                ⬇️ Download Excel
+                Download Excel
               </button>
             </div>
+
           </div>
         </div>
       )}
 
-      {/* MODAL PREVIEW UANG MAKAN */}
       {showPreviewUangMakan && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-[95vw] h-[90vh] rounded-2xl shadow-2xl flex flex-col border-t-4 border-amber-500">
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+        <div className="bg-white w-[90%] h-[85%] rounded-xl flex flex-col">
 
-            {/* HEADER */}
-            <div className="p-6 border-b-2 border-gray-200 flex justify-between items-center bg-gradient-to-r from-amber-50 to-white">
-              <h2 className="font-bold text-2xl text-amber-800 flex items-center gap-2">
-                <span>💰</span> Preview Rekap Uang Makan
-              </h2>
-              <button onClick={() => setShowPreviewUangMakan(false)} className="p-2 hover:bg-red-100 rounded-full transition duration-200">
-                <X size={28} className="text-red-500" />
-              </button>
-            </div>
+          {/* HEADER */}
+          <div className="p-4 border-b flex justify-between">
+            <h2 className="font-bold text-lg">
+              Preview Rekap Uang Makan
+            </h2>
+            <button onClick={() => setShowPreviewUangMakan(false)}>✕</button>
+          </div>
+          {/* CONTENT */}
+                <div className="flex-1 overflow-auto p-6">
+                <div className="text-center font-bold text-lg">
+                  REKAPITULASI UANG MAKAN KARYAWAN
+                </div>
+                <div className="text-center font-bold mb-4">
+                  PERIODE {startDate} s.d {endDate}
+                </div>
 
-            {/* CONTENT */}
-            <div className="flex-1 overflow-auto p-6">
-              <div className="text-center font-bold text-xl text-gray-800 mb-2">
-                💰 REKAPITULASI UANG MAKAN KARYAWAN
-              </div>
-              <div className="text-center font-semibold mb-6 text-gray-600">
-                PERIODE {startDate} s.d {endDate}
-              </div>
-
-              <div className="max-h-[600px] overflow-auto border-2 border-gray-200 rounded-xl">
-                <table className="min-w-full text-sm border-collapse bg-white">
-                  <thead className="bg-gradient-to-r from-amber-600 to-amber-700 text-white sticky top-0 z-10">
+                <div className="max-h-[650px] overflow-auto border rounded">
+                  <table className="min-w-full text-sm border-collapse">
+                  <thead className="bg-gray-100 font-bold text-center sticky top-0 z-10">
                     <tr>
-                      {["NO", "NAMA", "JABATAN", "DEPT", "H", "OFF", "S", "I", "A", "EO", "CUTI", "TGS", "TOTAL"].map(h => (
-                        <th key={h} className="border p-3 text-center font-semibold text-xs md:text-sm">{h}</th>
-                      ))}
+                    {["NO","NAMA","JABATAN","DEPT","H","OFF","S","I","A","EO","CUTI","TGS","TOTAL"].map(h => (
+                      <th key={h} className="border p-2 sticky top-0 bg-gray-100">
+                      {h}
+                      </th>
+                    ))}
                     </tr>
                   </thead>
                   <tbody>
                     {previewUangMakan.map((r, i) => (
-                      <tr key={i} className={`border-b border-gray-200 transition duration-200 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-amber-100`}>
-                        <td className="border p-3 text-center font-semibold text-gray-800">{i + 1}</td>
-                        <td className="border p-3 text-left font-medium text-gray-800">{r.nama}</td>
-                        <td className="border p-3 text-center text-gray-700">{r.jabatan}</td>
-                        <td className="border p-3 text-center text-gray-700">{r.dept}</td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-green-100 text-green-800 rounded-lg text-xs">{r.H}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-red-100 text-red-800 rounded-lg text-xs">{r.OFF}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-lg text-xs">{r.S}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-lg text-xs">{r.I}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-red-100 text-red-800 rounded-lg text-xs">{r.A}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-lg text-xs">{r.EO}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-lg text-xs">{r.CUTI}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-teal-100 text-teal-800 rounded-lg text-xs">{r.TGS}</span></td>
-                        <td className="border p-3 text-center font-bold"><span className="px-2 py-1 bg-amber-100 text-amber-800 rounded-lg">{r.TOTAL}</span></td>
-                      </tr>
+                    <tr key={i} className="text-center hover:bg-gray-50">
+                      <td className="border p-1">{i+1}</td>
+                      <td className="border p-1 text-left">{r.nama}</td>
+                      <td className="border p-1">{r.jabatan}</td>
+                      <td className="border p-1">{r.dept}</td>
+                      <td className="border p-1 font-bold">{r.H}</td>
+                      <td className="border p-1 font-bold">{r.OFF}</td>
+                      <td className="border p-1 font-bold">{r.S}</td>
+                      <td className="border p-1 font-bold">{r.I}</td>
+                      <td className="border p-1 font-bold">{r.A}</td>
+                      <td className="border p-1 font-bold">{r.EO}</td>
+                      <td className="border p-1 font-bold">{r.CUTI}</td>
+                      <td className="border p-1 font-bold">{r.TGS}</td>
+                      <td className="border p-1 font-bold">{r.TOTAL}</td>
+                    </tr>
                     ))}
                   </tbody>
-                </table>
-              </div>
-            </div>
+                  </table>
+                </div>
+                </div>
 
-            {/* FOOTER */}
-            <div className="p-6 border-t-2 border-gray-200 bg-gradient-to-r from-gray-50 to-white flex justify-end gap-3">
-              <button
-                onClick={() => setShowPreviewUangMakan(false)}
-                className="px-6 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-xl font-semibold transition duration-200 shadow-md"
-              >
-                ✕ Tutup
-              </button>
-              <button
-                onClick={() =>
-                  exportRekapUangMakan(
-                    previewUangMakan,
-                    startDate,
-                    endDate
-                  )
-                }
-                className="px-6 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-xl font-semibold transition duration-200 shadow-lg hover:shadow-xl"
-              >
-                ⬇️ Download Excel
-              </button>
-            </div>
+                {/* FOOTER */}
+          <div className="p-4 border-t flex justify-end">
+            <button
+              onClick={() =>
+                exportRekapUangMakan(
+                  previewUangMakan,
+                  startDate,
+                  endDate
+                )
+              }
+              className="px-4 py-2 bg-blue-600 text-white rounded"
+            >
+              Download Excel
+            </button>
           </div>
+
         </div>
-      )}
-      
-      {/* MODAL REKAP HARIAN HOD */}
-      {/* ==================== MODAL REKAP HARIAN HOD ==================== */}
-      {isHodModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[95vw] max-h-[95vh] flex flex-col">
-            
-            {/* ========== HEADER ========== */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-cyan-600 to-cyan-700 rounded-t-2xl">
-              <div>
-                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                  <FileSpreadsheet size={24} />
-                  Rekap Harian HOD
-                </h2>
-                <p className="text-cyan-100 text-sm mt-1">Head of Department Daily Report</p>
-              </div>
-              <button
-                onClick={closeHodModal}
-                className="text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-2 transition duration-200"
-              >
-                <X size={24} />
-              </button>
-            </div>
+      </div>
+    )}
 
-            {/* ========== FILTER SECTION ========== */}
-            <div className="p-6 border-b border-gray-200 bg-gradient-to-br from-gray-50 to-white">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                
-                {/* Tanggal Mulai */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    <Calendar size={16} className="inline mr-1" />
-                    Tanggal Mulai <span className="text-red-600">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={hodStartDate}
-                    onChange={(e) => setHodStartDate(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition duration-200 font-medium"
-                  />
-                </div>
 
-                {/* Tanggal Selesai */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    <Calendar size={16} className="inline mr-1" />
-                    Tanggal Selesai <span className="text-red-600">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={hodEndDate}
-                    onChange={(e) => setHodEndDate(e.target.value)}
-                    min={hodStartDate}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition duration-200 font-medium"
-                  />
-                </div>
 
-                {/* Pilih Karyawan */}
-                {/* Pilih Karyawan - SEARCHABLE SELECT */}
-                <div className="relative searchable-select">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    👤 Pilih Karyawan <span className="text-red-600">*</span>
-                  </label>
-                  
-                  {/* Button Trigger */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!loadingHod && hodStartDate && hodEndDate) {
-                        setIsDropdownOpen(!isDropdownOpen);
-                        setSearchKaryawan('');
-                      }
-                    }}
-                    disabled={loadingHod || !hodStartDate || !hodEndDate}
-                    className={`w-full px-4 py-2.5 border rounded-lg text-left flex items-center justify-between transition duration-200 font-medium
-                      ${loadingHod || !hodStartDate || !hodEndDate 
-                        ? 'bg-gray-100 cursor-not-allowed border-gray-300 text-gray-400' 
-                        : 'bg-white border-gray-300 hover:border-cyan-500 focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-gray-700'
-                      }`}
-                  >
-                    <span className={selectedKaryawan ? 'text-gray-900' : 'text-gray-500'}>
-                      {selectedKaryawan 
-                        ? karyawanOptions.find(k => k.value === selectedKaryawan)?.label 
-                        : '-- Pilih Karyawan --'
-                      }
-                    </span>
-                    <svg 
-                      className={`w-5 h-5 transition-transform duration-200 ${isDropdownOpen ? 'transform rotate-180' : ''}`} 
-                      fill="none" 
-                      stroke="currentColor" 
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-
-                  {/* Dropdown Menu */}
-                  {isDropdownOpen && (
-                    <div className="absolute z-50 w-full mt-2 bg-white border-2 border-cyan-500 rounded-lg shadow-2xl max-h-80 flex flex-col">
-                      {/* Search Input */}
-                      <div className="p-3 border-b border-gray-200 bg-gradient-to-r from-cyan-50 to-blue-50">
-                        <div className="relative">
-                          <input
-                            type="text"
-                            value={searchKaryawan}
-                            onChange={(e) => setSearchKaryawan(e.target.value)}
-                            placeholder="🔍 Cari nama karyawan..."
-                            className="w-full px-4 py-2.5 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition duration-200 font-medium"
-                            autoFocus
-                          />
-                          {searchKaryawan && (
-                            <button
-                              onClick={() => setSearchKaryawan('')}
-                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                            >
-                              <X size={18} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Options List */}
-                      <div className="overflow-y-auto max-h-64 custom-scrollbar">
-                        {filteredKaryawan.length === 0 ? (
-                          <div className="p-6 text-center text-gray-500">
-                            <Users size={32} className="mx-auto mb-2 opacity-50" />
-                            <p className="font-medium">Tidak ada karyawan ditemukan</p>
-                            <p className="text-sm mt-1">Coba kata kunci lain</p>
-                          </div>
-                        ) : (
-                          filteredKaryawan.map((item) => {
-                            const isSelected = hodSelectedIds.has(item.value);
-                            return (
-                              <button
-                                key={item.value}
-                                type="button"
-                                onClick={() => {
-                                  if (!isSelected) {
-                                    addHodData(item.value);
-                                    setIsDropdownOpen(false);
-                                    setSearchKaryawan('');
-                                  }
-                                }}
-                                disabled={isSelected}
-                                className={`w-full px-4 py-3 text-left transition duration-150 flex items-center justify-between
-                                  ${isSelected 
-                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                                    : 'hover:bg-gradient-to-r hover:from-cyan-50 hover:to-blue-50 text-gray-700 hover:text-cyan-900 cursor-pointer'
-                                  }
-                                  border-b border-gray-100 last:border-b-0
-                                `}
-                              >
-                                <span className={`font-medium ${isSelected ? 'line-through' : ''}`}>
-                                  {item.label}
-                                </span>
-                                {isSelected && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
-                                    <CheckCircle size={14} />
-                                    Sudah Dipilih
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-
-                      {/* Footer Info */}
-                      <div className="p-3 border-t border-gray-200 bg-gray-50 text-xs text-gray-600 flex items-center justify-between">
-                        <span>Total: {filteredKaryawan.length} karyawan</span>
-                        <span>Terpilih: {hodSelectedIds.size}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Alert Validasi */}
-              {(!hodStartDate || !hodEndDate) && (
-                <div className="mt-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 rounded-r-lg flex items-start gap-3">
-                  <span className="text-xl">⚠️</span>
-                  <div>
-                    <p className="font-semibold">Perhatian!</p>
-                    <p className="text-sm">Mohon lengkapi tanggal mulai dan selesai untuk memilih karyawan.</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Info & Action Buttons */}
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-                {/* Info Badge */}
-                <div className="flex items-center gap-3">
-                  {hodTableData.length > 0 && (
-                    <>
-                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-cyan-100 text-cyan-800 rounded-lg text-sm font-semibold border border-cyan-200">
-                        <FileSpreadsheet size={16} />
-                        Total: {hodTableData.length} record
-                      </div>
-                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-800 rounded-lg text-sm font-semibold border border-blue-200">
-                        👥 Karyawan: {hodSelectedIds.size}
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={clearAllHodData}
-                    disabled={hodTableData.length === 0}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 rounded-lg shadow-md hover:shadow-lg transition duration-300 disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed"
-                  >
-                    <Trash2 size={16} /> Hapus Semua
-                  </button>
-                  <button
-                    onClick={downloadHodExcel}
-                    disabled={hodTableData.length === 0}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 rounded-lg shadow-md hover:shadow-lg transition duration-300 disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed"
-                  >
-                    <Download size={16} /> Download Excel
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* ========== TABLE SECTION ========== */}
-            <div className="flex-1 overflow-auto p-6 bg-gray-50">
-              {loadingHod ? (
-                <div className="flex flex-col items-center justify-center h-64 gap-4">
-                  <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-cyan-600"></div>
-                  <p className="text-gray-600 font-medium">Memuat data...</p>
-                </div>
-              ) : hodTableData.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-64 text-gray-500">
-                  <div className="bg-gray-100 rounded-full p-8 mb-4">
-                    <FileSpreadsheet size={64} className="opacity-50" />
-                  </div>
-                  <p className="text-xl font-semibold text-gray-700 mb-2">Belum ada data</p>
-                  <p className="text-sm text-gray-500">Pilih tanggal dan karyawan untuk memulai</p>
-                </div>
-              ) : (
-                <div className="bg-white rounded-lg border-2 border-gray-200 shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gradient-to-r from-cyan-600 to-cyan-700">
-                        <tr>
-                          <th className="px-4 py-3.5 text-left text-xs font-bold text-white uppercase tracking-wider">No</th>
-                          <th className="px-4 py-3.5 text-left text-xs font-bold text-white uppercase tracking-wider">Tanggal</th>
-                          <th className="px-4 py-3.5 text-left text-xs font-bold text-white uppercase tracking-wider">Nama Karyawan</th>
-                          <th className="px-4 py-3.5 text-left text-xs font-bold text-white uppercase tracking-wider">Jabatan</th>
-                          <th className="px-4 py-3.5 text-left text-xs font-bold text-white uppercase tracking-wider">Departemen</th>
-                          <th className="px-4 py-3.5 text-center text-xs font-bold text-white uppercase tracking-wider">Shift</th>
-                          <th className="px-4 py-3.5 text-center text-xs font-bold text-white uppercase tracking-wider">Actual Masuk</th>
-                          <th className="px-4 py-3.5 text-center text-xs font-bold text-white uppercase tracking-wider">Actual Pulang</th>
-                          <th className="px-4 py-3.5 text-center text-xs font-bold text-white uppercase tracking-wider">Status Kehadiran</th>
-                          <th className="px-4 py-3.5 text-center text-xs font-bold text-white uppercase tracking-wider">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {hodTableData.map((row, index) => (
-                          <tr
-                            key={index}
-                            className={`hover:bg-cyan-50 transition duration-150 ${
-                              index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-                            }`}
-                          >
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 font-semibold">
-                              {index + 1}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 font-medium">
-                              {row.tanggal || "-"}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-gray-900">
-                              {row.nama}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-                              {row.jabatan}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
-                              {row.departemen}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-center">
-                              <span className="inline-flex px-3 py-1 bg-gradient-to-r from-cyan-100 to-blue-100 text-cyan-800 rounded-full text-xs font-bold border border-cyan-200">
-                                {row.shift}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-center">
-                              <span className="inline-flex px-3 py-1 bg-green-100 text-green-800 rounded-lg text-sm font-semibold">
-                                {formatJam(row.check_in || "-")}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-center">
-                              <span className="inline-flex px-3 py-1 bg-red-100 text-red-800 rounded-lg text-sm font-semibold">
-                                {formatJam(row.check_out || "-")}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-center">
-                              <span className="inline-flex px-3 py-1 bg-gradient-to-r from-cyan-100 to-blue-100 text-cyan-800 rounded-full text-xs font-bold border border-cyan-200">
-                                {row.status_kehadiran}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-center">
-                              <button
-                                onClick={() => removeHodRow(index)}
-                                className="inline-flex items-center justify-center p-2 text-red-600 hover:bg-red-100 rounded-lg transition duration-200 hover:scale-110"
-                                title="Hapus data ini"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* ========== FOOTER ========== */}
-            <div className="flex items-center justify-between p-6 border-t-2 border-gray-200 bg-gradient-to-r from-gray-50 to-white rounded-b-2xl">
-              <div className="text-sm text-gray-700 font-medium">
-                {hodTableData.length > 0 && hodStartDate && hodEndDate && (
-                  <span className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm">
-                    📊 Periode: <span className="font-bold text-cyan-700">{formatDate(hodStartDate)}</span> s/d <span className="font-bold text-cyan-700">{formatDate(hodEndDate)}</span>
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={closeHodModal}
-                className="px-6 py-2.5 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 hover:border-gray-400 transition duration-200 shadow-sm"
-              >
-                Tutup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

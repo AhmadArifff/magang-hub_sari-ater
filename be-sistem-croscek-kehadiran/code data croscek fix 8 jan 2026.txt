@@ -1,0 +1,295 @@
+SELECT
+                base.Nama,
+                base.Tanggal,
+                base.Kode_Shift,
+                base.Jabatan,
+                base.Departemen,
+                base.id_karyawan,
+                base.NIK,
+                ij.jam_masuk AS Jadwal_Masuk,
+                ij.jam_pulang AS Jadwal_Pulang,
+                base.Actual_Masuk,
+                base.Actual_Pulang,
+
+                /* ===============================
+                STATUS KEHADIRAN
+                =============================== */
+                CASE
+                    WHEN base.Kode_Shift IN ('CT','CTT','EO','OF1','CTB','X')
+                        THEN ij.keterangan
+                    WHEN base.Actual_Masuk IS NULL AND base.Actual_Pulang IS NULL
+                        THEN 'Tidak Hadir'
+                    ELSE 'Hadir'
+                END AS Status_Kehadiran,
+
+                /* ===============================
+                STATUS MASUK → ACUAN dari informasi_jadwal.jam_masuk
+                PENYESUAIAN: Support lintas bulan untuk shift 3A
+                =============================== */
+                CASE
+                    WHEN base.Actual_Masuk IS NULL
+                        THEN 'Tidak scan masuk'
+                    
+                    -- Khusus untuk shift 3A (00:00-08:00) - SUPPORT LINTAS BULAN
+                    WHEN base.Kode_Shift = '3A'
+                        THEN CASE
+                            -- Cek apakah scan masuk sesuai dengan tanggal jadwal (bisa beda bulan)
+                            WHEN DATE(base.Actual_Masuk) = DATE(base.Tanggal)
+                                THEN 'Masuk Tepat Waktu'
+                            -- Toleransi jika masuk H-1 malam (lintas bulan)
+                            WHEN DATE(base.Actual_Masuk) = DATE_SUB(DATE(base.Tanggal), INTERVAL 1 DAY)
+                                AND TIME(base.Actual_Masuk) >= '22:00:00'
+                                THEN 'Masuk Tepat Waktu'
+                            ELSE 'Masuk Telat'
+                        END
+                    
+                    -- Untuk shift malam lain yang melewati tengah malam - SUPPORT LINTAS BULAN
+                    WHEN ij.jam_pulang < ij.jam_masuk
+                        THEN CASE
+                            WHEN DATE(base.Actual_Masuk) = DATE(base.Tanggal)
+                                THEN 'Masuk Tepat Waktu'
+                            -- Toleransi jika masuk H-1 malam (lintas bulan)
+                            WHEN DATE(base.Actual_Masuk) = DATE_SUB(DATE(base.Tanggal), INTERVAL 1 DAY)
+                                AND TIME(base.Actual_Masuk) >= TIME(ij.jam_masuk)
+                                THEN 'Masuk Tepat Waktu'
+                            ELSE 'Masuk Telat'
+                        END
+                    
+                    -- Untuk shift normal (tidak lintas hari)
+                    ELSE CASE
+                        WHEN TIME(base.Actual_Masuk) > ij.jam_masuk
+                            THEN 'Masuk Telat'
+                        ELSE 'Masuk Tepat Waktu'
+                    END
+                END AS Status_Masuk,
+
+                /* ===============================
+                STATUS PULANG → ACUAN dari informasi_jadwal.jam_pulang
+                PENYESUAIAN: Support lintas bulan untuk shift 3A
+                =============================== */
+                CASE
+                    WHEN base.Actual_Pulang IS NULL
+                        THEN 'Tidak scan pulang'
+                    
+                    -- Khusus untuk shift 3A - SUPPORT LINTAS BULAN
+                    WHEN base.Kode_Shift = '3A'
+                        THEN CASE
+                            -- Pulang di H+1 (bisa lintas bulan: 31 Des → 1 Jan)
+                            WHEN DATE(base.Actual_Pulang) = DATE_ADD(DATE(base.Tanggal), INTERVAL 1 DAY)
+                                THEN CASE
+                                    WHEN TIME(base.Actual_Pulang) < ij.jam_pulang
+                                        THEN 'Pulang Terlalu Cepat'
+                                    ELSE 'Pulang Tepat Waktu'
+                                END
+                            -- Pulang masih di tanggal yang sama (terlalu cepat)
+                            WHEN DATE(base.Actual_Pulang) = DATE(base.Tanggal)
+                                THEN 'Pulang Terlalu Cepat'
+                            ELSE 'Pulang Terlalu Cepat'
+                        END
+                    
+                    -- Untuk shift malam lain - SUPPORT LINTAS BULAN
+                    WHEN ij.jam_pulang < ij.jam_masuk
+                        THEN CASE
+                            -- Pulang di H+1 (bisa lintas bulan)
+                            WHEN DATE(base.Actual_Pulang) = DATE_ADD(DATE(base.Tanggal), INTERVAL 1 DAY)
+                                THEN CASE
+                                    WHEN TIME(base.Actual_Pulang) < ij.jam_pulang
+                                        THEN 'Pulang Terlalu Cepat'
+                                    ELSE 'Pulang Tepat Waktu'
+                                END
+                            -- Pulang masih di tanggal yang sama
+                            WHEN DATE(base.Actual_Pulang) = DATE(base.Tanggal)
+                                THEN 'Pulang Terlalu Cepat'
+                            ELSE 'Pulang Terlalu Cepat'
+                        END
+                    
+                    -- Untuk shift normal
+                    ELSE CASE
+                        WHEN TIME(base.Actual_Pulang) < ij.jam_pulang
+                            THEN 'Pulang Terlalu Cepat'
+                        ELSE 'Pulang Tepat Waktu'
+                    END
+                END AS Status_Pulang
+
+            FROM (
+
+                SELECT
+                    jk.nama AS Nama,
+                    jk.tanggal AS Tanggal,
+                    jk.kode_shift AS Kode_Shift,
+                    k.jabatan AS Jabatan,
+                    k.dept AS Departemen,
+                    k.id_karyawan,
+                    k.nik AS NIK,
+
+                    /* ===============================
+                    ACTUAL MASUK - SUPPORT LINTAS BULAN
+                    =============================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+
+                        -- Shift 3A: Bisa masuk di akhir bulan, pulang di awal bulan
+                        -- Contoh: Jadwal 31 Des, masuk 31 Des 23:00, pulang 1 Jan 08:00
+                        WHEN jk.kode_shift = '3A'
+                        THEN (
+                            SELECT MIN(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.id_karyawan = jk.id_karyawan
+                            AND kk.nama = jk.nama
+                            AND kk.tanggal_scan BETWEEN
+                                    -- Window mulai: H-0 jam 22:00 (bisa 31 Des 22:00)
+                                    DATE_ADD(
+                                        CAST(CONCAT(jk.tanggal, ' 22:00:00') AS DATETIME),
+                                        INTERVAL 0 SECOND
+                                    )
+                                AND 
+                                    -- Window selesai: H+1 jam 03:00 (bisa 1 Jan 03:00)
+                                    DATE_ADD(
+                                        CAST(CONCAT(jk.tanggal, ' 03:00:00') AS DATETIME),
+                                        INTERVAL 1 DAY
+                                    )
+                        )
+
+                        -- Shift lintas hari lainnya - SUPPORT LINTAS BULAN
+                        WHEN ij.jam_pulang < ij.jam_masuk
+                        THEN (
+                            SELECT MIN(kk2.tanggal_scan)
+                            FROM kehadiran_karyawan kk2
+                            WHERE kk2.id_karyawan = jk.id_karyawan
+                            AND kk2.nama = jk.nama
+                            AND kk2.tanggal_scan BETWEEN
+                                    -- Window mulai: 6 jam sebelum jam masuk
+                                    DATE_SUB(
+                                        CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME),
+                                        INTERVAL 6 HOUR
+                                    )
+                                AND 
+                                    -- Window selesai: 4 jam setelah jam masuk
+                                    DATE_ADD(
+                                        CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME),
+                                        INTERVAL 4 HOUR
+                                    )
+                        )
+
+                        -- Shift normal (tidak lintas hari)
+                        ELSE (
+                            SELECT MIN(kk2.tanggal_scan)
+                            FROM kehadiran_karyawan kk2
+                            WHERE kk2.id_karyawan = jk.id_karyawan
+                            AND kk2.nama = jk.nama
+                            AND kk2.tanggal_scan BETWEEN
+                                    CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                                AND CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+                        )
+                    END AS Actual_Masuk,
+
+                    /* ===============================
+                    ACTUAL PULANG - SUPPORT LINTAS BULAN
+                    DENGAN PEMISAHAN DARI SCAN MASUK
+                    =============================== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+
+                        -- Shift 3A: Pulang di H+1 (bisa lintas bulan)
+                        -- Contoh: Jadwal 31 Des, pulang 1 Jan 08:00
+                        WHEN jk.kode_shift = '3A'
+                        THEN (
+                            SELECT MAX(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.id_karyawan = jk.id_karyawan
+                            AND kk.nama = jk.nama
+                            AND kk.tanggal_scan BETWEEN
+                                    -- Window mulai: H+1 jam 06:00 (bisa 1 Jan 06:00)
+                                    DATE_ADD(
+                                        CAST(CONCAT(jk.tanggal, ' 06:00:00') AS DATETIME),
+                                        INTERVAL 1 DAY
+                                    )
+                                AND 
+                                    -- Window selesai: H+1 jam 11:00 (bisa 1 Jan 11:00)
+                                    DATE_ADD(
+                                        CAST(CONCAT(jk.tanggal, ' 11:00:00') AS DATETIME),
+                                        INTERVAL 1 DAY
+                                    )
+                            -- Pastikan berbeda dari scan masuk
+                            AND kk.tanggal_scan <> COALESCE((
+                                SELECT MIN(kk_in.tanggal_scan)
+                                FROM kehadiran_karyawan kk_in
+                                WHERE kk_in.id_karyawan = jk.id_karyawan
+                                    AND kk_in.nama = jk.nama
+                                    AND kk_in.tanggal_scan BETWEEN
+                                        CONCAT(jk.tanggal, ' 22:00:00')
+                                    AND DATE_ADD(
+                                            CAST(CONCAT(jk.tanggal, ' 03:00:00') AS DATETIME),
+                                            INTERVAL 1 DAY
+                                        )
+                            ), '1900-01-01')
+                        )
+
+                        -- Shift lintas hari lainnya - SUPPORT LINTAS BULAN
+                        WHEN ij.jam_pulang < ij.jam_masuk
+                        THEN (
+                            SELECT MAX(kk3.tanggal_scan)
+                            FROM kehadiran_karyawan kk3
+                            WHERE kk3.id_karyawan = jk.id_karyawan
+                            AND kk3.nama = jk.nama
+                            AND kk3.tanggal_scan BETWEEN
+                                    -- Window mulai: 12 jam sebelum jam pulang (di H+1)
+                                    DATE_SUB(
+                                        DATE_ADD(
+                                            CAST(CONCAT(jk.tanggal, ' ', ij.jam_pulang) AS DATETIME),
+                                            INTERVAL 1 DAY
+                                        ),
+                                        INTERVAL 12 HOUR
+                                    )
+                                AND 
+                                    -- Window selesai: 6 jam setelah jam pulang (di H+1)
+                                    DATE_ADD(
+                                        DATE_ADD(
+                                            CAST(CONCAT(jk.tanggal, ' ', ij.jam_pulang) AS DATETIME),
+                                            INTERVAL 1 DAY
+                                        ),
+                                        INTERVAL 6 HOUR
+                                    )
+                            -- Pastikan berbeda dari scan masuk
+                            AND kk3.tanggal_scan <> COALESCE((
+                                SELECT MIN(kk2.tanggal_scan)
+                                FROM kehadiran_karyawan kk2
+                                WHERE kk2.id_karyawan = jk.id_karyawan
+                                    AND kk2.nama = jk.nama
+                                    AND kk2.tanggal_scan BETWEEN
+                                        CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                                    AND CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+                            ), '1900-01-01')
+                        )
+
+                        -- Shift normal (tidak lintas hari)
+                        ELSE (
+                            SELECT MAX(kk3.tanggal_scan)
+                            FROM kehadiran_karyawan kk3
+                            WHERE kk3.id_karyawan = jk.id_karyawan
+                            AND kk3.nama = jk.nama
+                            AND kk3.tanggal_scan BETWEEN
+                                    CAST(CONCAT(jk.tanggal, ' ', ij.jam_pulang) AS DATETIME) - INTERVAL 12 HOUR
+                                AND CAST(CONCAT(jk.tanggal, ' ', ij.jam_pulang) AS DATETIME) + INTERVAL 6 HOUR
+                            -- Pastikan berbeda dari scan masuk
+                            AND kk3.tanggal_scan <> COALESCE((
+                                SELECT MIN(kk2.tanggal_scan)
+                                FROM kehadiran_karyawan kk2
+                                WHERE kk2.id_karyawan = jk.id_karyawan
+                                    AND kk2.nama = jk.nama
+                                    AND kk2.tanggal_scan BETWEEN
+                                        CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) - INTERVAL 6 HOUR
+                                    AND CAST(CONCAT(jk.tanggal, ' ', ij.jam_masuk) AS DATETIME) + INTERVAL 4 HOUR
+                            ), '1900-01-01')
+                        )
+                    END AS Actual_Pulang
+
+                FROM jadwal_karyawan jk
+                LEFT JOIN karyawan k ON k.id_karyawan = jk.id_karyawan
+                LEFT JOIN informasi_jadwal ij ON ij.kode = jk.kode_shift
+
+            ) AS base
+
+            LEFT JOIN informasi_jadwal ij ON ij.kode = base.Kode_Shift
+
+            ORDER BY base.Nama, base.Tanggal;

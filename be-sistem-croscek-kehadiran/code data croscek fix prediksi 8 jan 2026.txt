@@ -1,0 +1,425 @@
+/* ===============================================
+            🚀 OPTIMIZED QUERY - FIXED SHIFT 3A LOGIC
+            =============================================== */
+
+            WITH 
+            /* CTE 1: Scan Data per Karyawan per Tanggal */
+            scan_data AS (
+                SELECT
+                    nama,
+                    DATE(tanggal_scan) AS tanggal,
+                    MIN(tanggal_scan) AS scan_masuk,
+                    MAX(tanggal_scan) AS scan_pulang
+                FROM kehadiran_karyawan
+                GROUP BY nama, DATE(tanggal_scan)
+            ),
+
+            /* CTE 2: Historical Frequency per Shift */
+            historical_freq AS (
+                SELECT 
+                    jk.nama,
+                    jk.kode_shift,
+                    COUNT(*) AS freq_count
+                FROM jadwal_karyawan jk
+                WHERE jk.tanggal >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
+                GROUP BY jk.nama, jk.kode_shift
+            ),
+
+            /* CTE 3: Base Data dengan Actual Masuk/Pulang - FIXED 3A */
+            base_data AS (
+                SELECT
+                    jk.nama AS Nama,
+                    jk.tanggal AS Tanggal,
+                    jk.kode_shift AS Kode_Shift,
+                    k.jabatan AS Jabatan,
+                    k.dept AS Departemen,
+                    k.id_karyawan,
+                    k.nik AS NIK,
+                    ij.jam_masuk,
+                    ij.jam_pulang,
+                    
+                    /* ===== ACTUAL MASUK - FIXED UNTUK 3A ===== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        
+                        -- FIXED: Shift 3A - Masuk H jam 22:00 sampai H+1 jam 03:00
+                        WHEN jk.kode_shift = '3A' THEN (
+                            SELECT MIN(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.nama = jk.nama
+                            AND (
+                                -- Window 1: H malam (22:00 - 23:59)
+                                (
+                                    DATE(kk.tanggal_scan) = jk.tanggal
+                                    AND TIME(kk.tanggal_scan) >= '22:00:00'
+                                )
+                                OR
+                                -- Window 2: H+1 dini hari (00:00 - 03:00)
+                                (
+                                    DATE(kk.tanggal_scan) = DATE_ADD(jk.tanggal, INTERVAL 1 DAY)
+                                    AND TIME(kk.tanggal_scan) <= '03:00:00'
+                                )
+                            )
+                        )
+                        
+                        WHEN ij.jam_pulang < ij.jam_masuk THEN (
+                            SELECT MIN(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.nama = jk.nama
+                            AND kk.tanggal_scan BETWEEN 
+                                CONCAT(jk.tanggal, ' ', ij.jam_masuk) - INTERVAL 6 HOUR
+                                AND CONCAT(jk.tanggal, ' ', ij.jam_masuk) + INTERVAL 4 HOUR
+                        )
+                        ELSE (
+                            SELECT MIN(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.nama = jk.nama
+                            AND kk.tanggal_scan BETWEEN 
+                                CONCAT(jk.tanggal, ' ', ij.jam_masuk) - INTERVAL 6 HOUR
+                                AND CONCAT(jk.tanggal, ' ', ij.jam_masuk) + INTERVAL 4 HOUR
+                        )
+                    END AS Actual_Masuk,
+                    
+                    /* ===== ACTUAL PULANG - FIXED UNTUK 3A ===== */
+                    CASE
+                        WHEN jk.kode_shift IN ('CT','CTT','EO','OF1','CTB','X') THEN NULL
+                        
+                        -- FIXED: Shift 3A - Pulang H+1 jam 06:00 sampai 11:00
+                        WHEN jk.kode_shift = '3A' THEN (
+                            SELECT MAX(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.nama = jk.nama
+                            AND DATE(kk.tanggal_scan) = DATE_ADD(jk.tanggal, INTERVAL 1 DAY)
+                            AND TIME(kk.tanggal_scan) >= '06:00:00'
+                            AND TIME(kk.tanggal_scan) <= '11:00:00'
+                            -- Exclude scan masuk
+                            AND kk.tanggal_scan != COALESCE((
+                                SELECT MIN(kk_in.tanggal_scan)
+                                FROM kehadiran_karyawan kk_in
+                                WHERE kk_in.nama = jk.nama
+                                AND (
+                                    (DATE(kk_in.tanggal_scan) = jk.tanggal
+                                    AND TIME(kk_in.tanggal_scan) >= '22:00:00')
+                                    OR
+                                    (DATE(kk_in.tanggal_scan) = DATE_ADD(jk.tanggal, INTERVAL 1 DAY)
+                                    AND TIME(kk_in.tanggal_scan) <= '03:00:00')
+                                )
+                            ), '1900-01-01')
+                        )
+                        
+                        WHEN ij.jam_pulang < ij.jam_masuk THEN (
+                            SELECT MAX(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.nama = jk.nama
+                            AND kk.tanggal_scan BETWEEN 
+                                CONCAT(jk.tanggal, ' ', ij.jam_pulang) + INTERVAL 1 DAY - INTERVAL 12 HOUR
+                                AND CONCAT(jk.tanggal, ' ', ij.jam_pulang) + INTERVAL 1 DAY + INTERVAL 6 HOUR
+                            AND kk.tanggal_scan != COALESCE((
+                                SELECT MIN(tanggal_scan) FROM kehadiran_karyawan 
+                                WHERE nama = jk.nama 
+                                AND tanggal_scan BETWEEN CONCAT(jk.tanggal, ' ', ij.jam_masuk) - INTERVAL 6 HOUR
+                                    AND CONCAT(jk.tanggal, ' ', ij.jam_masuk) + INTERVAL 4 HOUR
+                            ), '1900-01-01')
+                        )
+                        ELSE (
+                            SELECT MAX(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.nama = jk.nama
+                            AND kk.tanggal_scan BETWEEN 
+                                CONCAT(jk.tanggal, ' ', ij.jam_pulang) - INTERVAL 12 HOUR
+                                AND CONCAT(jk.tanggal, ' ', ij.jam_pulang) + INTERVAL 6 HOUR
+                            AND kk.tanggal_scan != COALESCE((
+                                SELECT MIN(tanggal_scan) FROM kehadiran_karyawan 
+                                WHERE nama = jk.nama 
+                                AND tanggal_scan BETWEEN CONCAT(jk.tanggal, ' ', ij.jam_masuk) - INTERVAL 6 HOUR
+                                    AND CONCAT(jk.tanggal, ' ', ij.jam_masuk) + INTERVAL 4 HOUR
+                            ), '1900-01-01')
+                        )
+                    END AS Actual_Pulang
+                    
+                FROM jadwal_karyawan jk
+                LEFT JOIN karyawan k ON k.id_karyawan = jk.id_karyawan
+                LEFT JOIN informasi_jadwal ij ON ij.kode = jk.kode_shift
+            ),
+
+            /* CTE 4: Prediksi Shift - FIXED 3A */
+            prediction_data AS (
+                SELECT
+                    s.nama,
+                    s.tanggal,
+                    ij2.kode AS kode_shift,
+                    
+                    /* ===== PREDIKSI ACTUAL MASUK - FIXED UNTUK 3A ===== */
+                    CASE
+                        -- FIXED: Shift 3A - Masuk H jam 22:00 sampai H+1 jam 03:00
+                        WHEN ij2.kode = '3A' THEN (
+                            SELECT MIN(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.nama = s.nama
+                            AND (
+                                -- Window 1: H malam (22:00 - 23:59)
+                                (
+                                    DATE(kk.tanggal_scan) = s.tanggal
+                                    AND TIME(kk.tanggal_scan) >= '22:00:00'
+                                )
+                                OR
+                                -- Window 2: H+1 dini hari (00:00 - 03:00)
+                                (
+                                    DATE(kk.tanggal_scan) = DATE_ADD(s.tanggal, INTERVAL 1 DAY)
+                                    AND TIME(kk.tanggal_scan) <= '03:00:00'
+                                )
+                            )
+                        )
+                        
+                        WHEN ij2.jam_pulang < ij2.jam_masuk THEN (
+                            SELECT MIN(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.nama = s.nama
+                            AND DATE(kk.tanggal_scan) BETWEEN DATE_SUB(s.tanggal, INTERVAL 1 DAY) AND s.tanggal
+                            AND kk.tanggal_scan BETWEEN 
+                                CONCAT(s.tanggal, ' ', ij2.jam_masuk) - INTERVAL 6 HOUR
+                                AND CONCAT(s.tanggal, ' ', ij2.jam_masuk) + INTERVAL 4 HOUR
+                        )
+                        ELSE (
+                            SELECT MIN(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.nama = s.nama
+                            AND DATE(kk.tanggal_scan) = s.tanggal
+                            AND kk.tanggal_scan BETWEEN 
+                                CONCAT(s.tanggal, ' ', ij2.jam_masuk) - INTERVAL 6 HOUR
+                                AND CONCAT(s.tanggal, ' ', ij2.jam_masuk) + INTERVAL 4 HOUR
+                        )
+                    END AS pred_actual_masuk,
+                    
+                    /* ===== PREDIKSI ACTUAL PULANG - FIXED UNTUK 3A ===== */
+                    CASE
+                        -- FIXED: Shift 3A - Pulang H+1 jam 06:00 sampai 11:00
+                        WHEN ij2.kode = '3A' THEN (
+                            SELECT MAX(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.nama = s.nama
+                            AND DATE(kk.tanggal_scan) = DATE_ADD(s.tanggal, INTERVAL 1 DAY)
+                            AND TIME(kk.tanggal_scan) >= '06:00:00'
+                            AND TIME(kk.tanggal_scan) <= '11:00:00'
+                            -- Exclude scan masuk
+                            AND kk.tanggal_scan != COALESCE((
+                                SELECT MIN(kk_in.tanggal_scan)
+                                FROM kehadiran_karyawan kk_in
+                                WHERE kk_in.nama = s.nama
+                                AND (
+                                    (DATE(kk_in.tanggal_scan) = s.tanggal
+                                    AND TIME(kk_in.tanggal_scan) >= '22:00:00')
+                                    OR
+                                    (DATE(kk_in.tanggal_scan) = DATE_ADD(s.tanggal, INTERVAL 1 DAY)
+                                    AND TIME(kk_in.tanggal_scan) <= '03:00:00')
+                                )
+                            ), '1900-01-01')
+                        )
+                        
+                        WHEN ij2.jam_pulang < ij2.jam_masuk THEN (
+                            SELECT MAX(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.nama = s.nama
+                            AND DATE(kk.tanggal_scan) BETWEEN s.tanggal AND DATE_ADD(s.tanggal, INTERVAL 1 DAY)
+                            AND kk.tanggal_scan BETWEEN 
+                                CONCAT(s.tanggal, ' ', ij2.jam_pulang) + INTERVAL 1 DAY - INTERVAL 12 HOUR
+                                AND CONCAT(s.tanggal, ' ', ij2.jam_pulang) + INTERVAL 1 DAY + INTERVAL 6 HOUR
+                            AND kk.tanggal_scan != s.scan_masuk
+                        )
+                        ELSE (
+                            SELECT MAX(kk.tanggal_scan)
+                            FROM kehadiran_karyawan kk
+                            WHERE kk.nama = s.nama
+                            AND DATE(kk.tanggal_scan) = s.tanggal
+                            AND kk.tanggal_scan BETWEEN 
+                                CONCAT(s.tanggal, ' ', ij2.jam_pulang) - INTERVAL 12 HOUR
+                                AND CONCAT(s.tanggal, ' ', ij2.jam_pulang) + INTERVAL 6 HOUR
+                            AND kk.tanggal_scan != s.scan_masuk
+                        )
+                    END AS pred_actual_pulang,
+                    
+                    /* Deviation Scoring */
+                    (
+                        0.7 * CASE 
+                            WHEN s.scan_masuk IS NOT NULL 
+                            THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_masuk), ij2.jam_masuk))
+                            ELSE 999 
+                        END +
+                        0.3 * CASE 
+                            WHEN s.scan_pulang IS NOT NULL 
+                            THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_pulang), ij2.jam_pulang))
+                            ELSE 999 
+                        END
+                    ) - COALESCE(hf.freq_count * 5, 0) AS final_score,
+                    
+                    /* Probabilitas */
+                    CASE 
+                        WHEN s.scan_masuk IS NOT NULL AND s.scan_pulang IS NOT NULL
+                        THEN ROUND(100 * (1 - ((
+                            0.7 * ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_masuk), ij2.jam_masuk)) +
+                            0.3 * ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_pulang), ij2.jam_pulang))
+                        ) / 180)), 2)
+                        WHEN s.scan_masuk IS NOT NULL 
+                        THEN ROUND(50 * (1 - (ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_masuk), ij2.jam_masuk)) / 90)), 2)
+                        WHEN s.scan_pulang IS NOT NULL 
+                        THEN ROUND(50 * (1 - (ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_pulang), ij2.jam_pulang)) / 90)), 2)
+                        ELSE 0
+                    END AS probabilitas,
+                    
+                    /* Confidence */
+                    CASE 
+                        WHEN (0.7 * CASE WHEN s.scan_masuk IS NOT NULL 
+                            THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_masuk), ij2.jam_masuk)) ELSE 999 END +
+                            0.3 * CASE WHEN s.scan_pulang IS NOT NULL 
+                            THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_pulang), ij2.jam_pulang)) ELSE 999 END
+                        ) <= 45 THEN 'Sangat Tinggi'
+                        WHEN (0.7 * CASE WHEN s.scan_masuk IS NOT NULL 
+                            THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_masuk), ij2.jam_masuk)) ELSE 999 END +
+                            0.3 * CASE WHEN s.scan_pulang IS NOT NULL 
+                            THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_pulang), ij2.jam_pulang)) ELSE 999 END
+                        ) <= 90 THEN 'Tinggi'
+                        WHEN (0.7 * CASE WHEN s.scan_masuk IS NOT NULL 
+                            THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_masuk), ij2.jam_masuk)) ELSE 999 END +
+                            0.3 * CASE WHEN s.scan_pulang IS NOT NULL 
+                            THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_pulang), ij2.jam_pulang)) ELSE 999 END
+                        ) <= 180 THEN 'Sedang'
+                        ELSE 'Rendah'
+                    END AS confidence_score,
+                    
+                    COALESCE(hf.freq_count, 0) AS freq_shift,
+                    
+                    ROW_NUMBER() OVER (
+                        PARTITION BY s.nama, s.tanggal
+                        ORDER BY (
+                            0.7 * CASE WHEN s.scan_masuk IS NOT NULL 
+                                THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_masuk), ij2.jam_masuk)) ELSE 999 END +
+                            0.3 * CASE WHEN s.scan_pulang IS NOT NULL 
+                                THEN ABS(TIMESTAMPDIFF(MINUTE, TIME(s.scan_pulang), ij2.jam_pulang)) ELSE 999 END
+                        ) - COALESCE(hf.freq_count * 5, 0) ASC
+                    ) AS rn
+                    
+                FROM scan_data s
+                CROSS JOIN informasi_jadwal ij2
+                LEFT JOIN historical_freq hf ON hf.nama = s.nama AND hf.kode_shift = ij2.kode
+                WHERE ij2.kode NOT IN ('CT','CTT','EO','OF1','CTB','X')
+                AND ij2.lokasi_kerja = 'Ciater'
+            )
+
+            /* ===== MAIN SELECT ===== */
+            SELECT
+                base.Nama,
+                base.Tanggal,
+                base.Kode_Shift,
+                base.Jabatan,
+                base.Departemen,
+                base.id_karyawan,
+                base.NIK,
+                ij.jam_masuk AS Jadwal_Masuk,
+                ij.jam_pulang AS Jadwal_Pulang,
+                base.Actual_Masuk,
+                base.Actual_Pulang,
+                
+                /* Prediksi (hanya jika ada yang NULL) */
+                CASE 
+                    WHEN base.Actual_Masuk IS NOT NULL AND base.Actual_Pulang IS NOT NULL 
+                    THEN NULL ELSE pred.kode_shift 
+                END AS Prediksi_Shift,
+                
+                CASE 
+                    WHEN base.Actual_Masuk IS NOT NULL AND base.Actual_Pulang IS NOT NULL 
+                    THEN NULL ELSE pred.pred_actual_masuk 
+                END AS Prediksi_Actual_Masuk,
+                
+                CASE 
+                    WHEN base.Actual_Masuk IS NOT NULL AND base.Actual_Pulang IS NOT NULL 
+                    THEN NULL ELSE pred.pred_actual_pulang 
+                END AS Prediksi_Actual_Pulang,
+                
+                CASE 
+                    WHEN base.Actual_Masuk IS NOT NULL AND base.Actual_Pulang IS NOT NULL 
+                    THEN NULL ELSE pred.probabilitas 
+                END AS Probabilitas_Prediksi,
+                
+                CASE 
+                    WHEN base.Actual_Masuk IS NOT NULL AND base.Actual_Pulang IS NOT NULL 
+                    THEN NULL ELSE pred.confidence_score 
+                END AS Confidence_Score,
+                
+                CASE 
+                    WHEN base.Actual_Masuk IS NOT NULL AND base.Actual_Pulang IS NOT NULL 
+                    THEN NULL ELSE pred.freq_shift 
+                END AS Frekuensi_Shift_Historis,
+                
+                /* ===== STATUS KEHADIRAN ===== */
+                CASE
+                    WHEN base.Kode_Shift IN ('CT','CTT','EO','OF1','CTB','X') THEN ij.keterangan
+                    WHEN base.Actual_Masuk IS NULL AND base.Actual_Pulang IS NULL THEN 'Tidak Hadir'
+                    ELSE 'Hadir'
+                END AS Status_Kehadiran,
+                
+                /* ===== STATUS MASUK - FIXED UNTUK 3A ===== */
+                CASE
+                    WHEN base.Actual_Masuk IS NULL THEN 'Tidak scan masuk'
+                    
+                    -- FIXED: Shift 3A - Masuk H jam 22:00 sampai H+1 jam 03:00
+                    WHEN base.Kode_Shift = '3A' THEN 
+                        CASE
+                            -- Masuk di H malam (22:00 - 23:59) = Tepat Waktu
+                            WHEN DATE(base.Actual_Masuk) = DATE(base.Tanggal)
+                                AND TIME(base.Actual_Masuk) >= '22:00:00'
+                                THEN 'Masuk Tepat Waktu'
+                            -- Masuk di H+1 dini hari (00:00 - 03:00) = Tepat Waktu
+                            WHEN DATE(base.Actual_Masuk) = DATE_ADD(DATE(base.Tanggal), INTERVAL 1 DAY)
+                                AND TIME(base.Actual_Masuk) <= '03:00:00'
+                                THEN 'Masuk Tepat Waktu'
+                            ELSE 'Masuk Telat'
+                        END
+                        
+                    WHEN ij.jam_pulang < ij.jam_masuk THEN 
+                        CASE
+                            WHEN DATE(base.Actual_Masuk) = DATE(base.Tanggal) THEN 'Masuk Tepat Waktu'
+                            WHEN DATE(base.Actual_Masuk) = DATE_SUB(DATE(base.Tanggal), INTERVAL 1 DAY)
+                                AND TIME(base.Actual_Masuk) >= TIME(ij.jam_masuk) THEN 'Masuk Tepat Waktu'
+                            ELSE 'Masuk Telat'
+                        END
+                    ELSE 
+                        CASE
+                            WHEN TIME(base.Actual_Masuk) > ij.jam_masuk THEN 'Masuk Telat'
+                            ELSE 'Masuk Tepat Waktu'
+                        END
+                END AS Status_Masuk,
+                
+                /* ===== STATUS PULANG - FIXED UNTUK 3A ===== */
+                CASE
+                    WHEN base.Actual_Pulang IS NULL THEN 'Tidak scan pulang'
+                    
+                    -- FIXED: Shift 3A - Pulang H+1 jam 06:00 - 11:00
+                    WHEN base.Kode_Shift = '3A' THEN 
+                        CASE
+                            -- Pulang di H+1 pagi (06:00 - 11:00 atau lebih) = Tepat Waktu
+                            WHEN DATE(base.Actual_Pulang) = DATE_ADD(DATE(base.Tanggal), INTERVAL 1 DAY)
+                                AND TIME(base.Actual_Pulang) >= '06:00:00'
+                                THEN 'Pulang Tepat Waktu'
+                            ELSE 'Pulang Terlalu Cepat'
+                        END
+                        
+                    WHEN ij.jam_pulang < ij.jam_masuk THEN 
+                        CASE
+                            WHEN DATE(base.Actual_Pulang) = DATE_ADD(DATE(base.Tanggal), INTERVAL 1 DAY)
+                                AND TIME(base.Actual_Pulang) >= ij.jam_pulang THEN 'Pulang Tepat Waktu'
+                            ELSE 'Pulang Terlalu Cepat'
+                        END
+                    ELSE 
+                        CASE
+                            WHEN TIME(base.Actual_Pulang) < ij.jam_pulang THEN 'Pulang Terlalu Cepat'
+                            ELSE 'Pulang Tepat Waktu'
+                        END
+                END AS Status_Pulang
+
+            FROM base_data base
+            LEFT JOIN informasi_jadwal ij ON ij.kode = base.Kode_Shift
+            LEFT JOIN prediction_data pred ON pred.nama = base.Nama 
+                AND pred.tanggal = base.Tanggal 
+                AND pred.rn = 1
+
+            ORDER BY base.Nama, base.Tanggal;
