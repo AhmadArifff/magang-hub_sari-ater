@@ -3039,6 +3039,17 @@ export default function Croscek() {
     const s = (row.Status_Kehadiran || "").toUpperCase();
     return ["TIDAK HADIR", "ALPA", "SAKIT", "IZIN", "DINAS LUAR"].includes(s);
   };
+  
+  const isLiburAdaPrediksi = (row) => {
+    const libur = LIBUR_SHIFTS.includes((row.Kode_Shift || "").toUpperCase());
+
+    const adaPrediksiMasuk = !!row.Prediksi_Actual_Masuk;
+    const adaPrediksiPulang = !!row.Prediksi_Actual_Pulang;
+
+    return libur && (adaPrediksiMasuk || adaPrediksiPulang);
+  };
+
+
 
   const isHadirBermasalah = (row) => {
     if ((row.Status_Kehadiran || "").toUpperCase() !== "HADIR") return false;
@@ -5961,13 +5972,25 @@ const formatDate = (dateString) => {
                   </thead>
                   <tbody>
                     {paginated.map((row, i) => (
+                      // <tr
+                      //   key={i}
+                      //   className={`border-b border-gray-200 transition duration-200 ${
+                      //     isTidakHadir(row)
+                      //       ? "bg-red-200 hover:bg-red-300"
+                      //       : !isTidakHadir(row) &&
+                      //         (isHadirBermasalah(row) || isActualKosong(row))
+                      //       ? "bg-yellow-200 hover:bg-yellow-300"
+                      //       : "hover:bg-gray-100"
+                      //   }`}
+                      // >
                       <tr
                         key={i}
                         className={`border-b border-gray-200 transition duration-200 ${
                           isTidakHadir(row)
                             ? "bg-red-200 hover:bg-red-300"
-                            : !isTidakHadir(row) &&
-                              (isHadirBermasalah(row) || isActualKosong(row))
+                            : isLiburAdaPrediksi(row)
+                            ? "bg-yellow-200 hover:bg-yellow-300"
+                            : isHadirBermasalah(row) || isActualKosong(row)
                             ? "bg-yellow-200 hover:bg-yellow-300"
                             : "hover:bg-gray-100"
                         }`}
